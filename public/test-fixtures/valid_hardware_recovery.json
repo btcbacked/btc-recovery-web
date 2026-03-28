@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "network": "testnet",
+  "outputDescriptor": "wsh(sortedmulti(2,[ABCD1234/48'/1'/0'/2']tpubABC/0/*,[5678EF90/48'/1'/0'/2']tpubDEF/0/*))",
+  "context": {
+    "contractId": "test-contract-456",
+    "role": "borrower",
+    "threshold": 2,
+    "totalKeys": 2
+  },
+  "userKey": {
+    "keySource": "COLD_CARD",
+    "derivationPath": "48'/1'/0'/2'",
+    "xpub": "tpubDCxzhZZE3JFMcGNHVVdFh9r1nJ8RvmvXHxYCBjnRNdRNynnD2eLF9TUwP3CwrUUCLco6nBjiH3xYdPHrSbXqME93vgzC9MRfZ2Kb9K2hL5C",
+    "fingerprint": "5678EF90"
+  }
+}
