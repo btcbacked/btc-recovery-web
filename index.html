@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="BTCBacked Key Recovery Tool - Recover your Bitcoin signing keys offline" />
+    <!--
+      PRODUCTION CSP: uncomment and deploy this header via your web server or CDN instead.
+      All crypto runs client-side; no external network calls are made in production.
+
+      Content-Security-Policy:
+        default-src 'none';
+        script-src 'self';
+        style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+        img-src 'self' data:;
+        font-src 'self' https://fonts.gstatic.com;
+        connect-src 'none';
+        frame-ancestors 'none';
+        base-uri 'self';
+        form-action 'none';
+    -->
+    <!-- DEV CSP: allows Vite HMR websocket, localhost connections, and Google Fonts -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:*; frame-ancestors 'none'; base-uri 'self'; form-action 'none';" />
+    <title>BTCBacked Key Recovery</title>
+    <link rel="icon" type="image/svg+xml" href="/logo/favicon.svg" />
+    <!-- Outfit font — same as webapp-v2 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <p style="font-family: sans-serif; text-align: center; padding: 2rem;">
+        JavaScript is required to run the BTCBacked Key Recovery Tool.
+        All cryptographic operations run locally in your browser — no data is ever sent to a server.
+      </p>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

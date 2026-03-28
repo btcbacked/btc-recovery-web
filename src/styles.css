@@ -1,0 +1,684 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+
+/* ============================================================
+   BASE
+   ============================================================ */
+
+body {
+  @apply m-0;
+  font-family:
+    'Outfit',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Roboto',
+    'Oxygen',
+    'Ubuntu',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Monospace / code font */
+code,
+pre,
+.font-mono {
+  font-family:
+    'SF Mono',
+    ui-monospace,
+    'Cascadia Code',
+    'Source Code Pro',
+    Menlo,
+    Consolas,
+    'Courier New',
+    monospace;
+}
+
+/* ============================================================
+   DESIGN TOKENS — LIGHT MODE
+   ============================================================ */
+
+:root {
+  /* Typography */
+  --font-primary: 'Outfit', sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+  --font-weight-light: 300;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --text-auth-heading: 22px;
+  --text-body-lg: 15px;
+  --text-body: 13px;
+  --text-body-sm: 11px;
+  --text-caption: 10px;
+
+  /* Spacing */
+  --space-xs: 3px;
+  --space-sm: 5px;
+  --space-md: 6px;
+  --space-lg: 10px;
+  --space-xl: 13px;
+  --space-2xl: 16px;
+  --space-4xl: 26px;
+  --space-5xl: 32px;
+
+  /* Radius */
+  --radius-base: 8px;
+  --radius-surface: 12px;
+  --radius-pill: 28px;
+  --radius-cta: 35px;
+  --radius-full: 9999px;
+
+  /* ---- Glow / ambient ---- */
+  --auth-card-glow:
+    0 0 0 1px rgba(254, 121, 33, 0.06),
+    0 0 20px rgba(254, 121, 33, 0.08),
+    0 0 40px rgba(254, 121, 33, 0.04);
+  --auth-ambient-glow: radial-gradient(
+    50% 40% at 50% 50%,
+    rgba(254, 121, 33, 0.04) 0%,
+    transparent 100%
+  );
+
+  /* Glass-morphism card */
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-backdrop-blur: 16px;
+
+  /* Page gradient background (very subtle warmth at the top) */
+  --page-bg-gradient: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    rgba(254, 121, 33, 0.02) 0%,
+    transparent 70%
+  );
+
+  /* ---- Semantic color tokens ---- */
+  --background: #ffffff;
+  --foreground: #151515;
+  --text-primary: #151515;
+  --text-secondary: #151515;
+  --text-muted: rgba(21, 21, 21, 0.5);
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: #ffffff;
+  --popover-foreground: var(--foreground);
+  --primary: #fe7921;
+  --primary-foreground: #f3f3f3;
+  --secondary: #f5f5f5;
+  --secondary-foreground: var(--foreground);
+  --muted: #f5f5f5;
+  --muted-foreground: var(--text-muted);
+  --accent: #f5f5f5;
+  --accent-foreground: var(--foreground);
+  --border: #e0e0e0;
+  --border-subtle: rgba(21, 21, 21, 0.2);
+  --input: #e0e0e0;
+  --input-bg: #ffffff;
+  --ring: #fe7921;
+
+  /* Buttons */
+  --button-primary-hover: #df600d;
+  --button-primary-disabled-bg: #d9d9d9;
+  --button-primary-disabled-fg: rgba(21, 21, 21, 0.4);
+
+  /* Status */
+  --destructive: #f04438;
+  --destructive-foreground: #f3f3f3;
+  --destructive-bg: rgba(240, 68, 56, 0.1);
+  --success: #12b76a;
+  --success-foreground: #f3f3f3;
+  --success-bg: rgba(16, 140, 64, 0.1);
+  --warning: #f79009;
+  --warning-foreground: #f3f3f3;
+  --warning-bg: rgba(247, 144, 9, 0.1);
+  --info: #1570ef;
+  --info-foreground: #f3f3f3;
+
+  /* Step indicator */
+  --step-inactive-bg: #ececec;
+  --step-completed-bg: #ffffff;
+  --step-completed-border: #151515;
+
+  /* Code block */
+  --code-bg: #f5f5f5;
+  --code-border: #e0e0e0;
+  --code-text: #151515;
+
+  /* Transition duration for theme switch */
+  --theme-transition: 200ms;
+}
+
+
+/* ============================================================
+   SMOOTH THEME TRANSITIONS
+   Covers background, border, text — but NOT layout-affecting
+   properties to avoid jarring reflows.
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  transition:
+    background-color var(--theme-transition) ease,
+    border-color var(--theme-transition) ease,
+    color var(--theme-transition) ease,
+    box-shadow var(--theme-transition) ease;
+}
+
+/* Opt-out for elements where transitions would feel wrong */
+input,
+textarea,
+button {
+  transition:
+    background-color var(--theme-transition) ease,
+    border-color var(--theme-transition) ease,
+    color var(--theme-transition) ease,
+    box-shadow var(--theme-transition) ease,
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+/* ============================================================
+   KEYFRAME ANIMATIONS
+   ============================================================ */
+
+/* Page / card entrance */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Wizard step cross-fade */
+@keyframes step-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Success checkmark pop */
+@keyframes success-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  70% {
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Step indicator: completed circle scale bounce */
+@keyframes step-complete {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.18);
+  }
+  70% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Current step pulse ring */
+@keyframes step-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(254, 121, 33, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(254, 121, 33, 0);
+  }
+}
+
+/* Deriving: orbital glow ring */
+@keyframes spin-ring {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Deriving: breathing glow behind the ring */
+@keyframes glow-breathe {
+  0%, 100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.08);
+  }
+}
+
+/* Status message fade-swap */
+@keyframes msg-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Security badge shimmer */
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* File drop icon bounce on drag-over */
+@keyframes icon-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-5px);
+  }
+  70% {
+    transform: translateY(-2px);
+  }
+}
+
+/* Gradient border rotation for drop zone */
+@keyframes border-spin {
+  from {
+    --border-angle: 0deg;
+  }
+  to {
+    --border-angle: 360deg;
+  }
+}
+
+/* Tab underline slide */
+@keyframes underline-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ============================================================
+   UTILITY CLASSES
+   ============================================================ */
+
+/* Page load animation */
+.animate-page-enter {
+  animation: fade-in-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Wizard step entrance */
+.animate-step-enter {
+  animation: step-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Success pop (result step icon) */
+.animate-success-pop {
+  animation: success-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Completed step animation */
+.animate-step-complete {
+  animation: step-complete 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Current step pulse */
+.animate-step-pulse {
+  animation: step-pulse 2s ease-in-out infinite;
+}
+
+/* Status message fade */
+.animate-msg-fade {
+  animation: msg-fade-in 0.35s ease both;
+}
+
+/* ============================================================
+   GLASS CARD
+   ============================================================ */
+
+.glass-card {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(var(--glass-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--glass-backdrop-blur));
+}
+
+/* ============================================================
+   PREMIUM BUTTONS
+   ============================================================ */
+
+/* Primary button — gradient + lift */
+.btn-primary {
+  background: linear-gradient(
+    135deg,
+    #ff8c35 0%,
+    #fe7921 45%,
+    #e86810 100%
+  );
+  box-shadow:
+    0 1px 3px rgba(254, 121, 33, 0.25),
+    0 1px 1px rgba(0, 0, 0, 0.08);
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease,
+    opacity 140ms ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    #ff9540 0%,
+    #fe7921 45%,
+    #df600d 100%
+  );
+  box-shadow:
+    0 4px 12px rgba(254, 121, 33, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.12);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.98) translateY(0);
+  box-shadow:
+    0 1px 3px rgba(254, 121, 33, 0.2),
+    0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+/* Outline button — border animation on hover */
+.btn-outline {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.btn-outline:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.btn-outline:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ============================================================
+   DERIVING STEP — PREMIUM RING
+   ============================================================ */
+
+.deriving-ring-container {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Breathing glow behind the ring */
+.deriving-ring-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(254, 121, 33, 0.3) 0%, transparent 70%);
+  animation: glow-breathe 2.5s ease-in-out infinite;
+}
+
+/* SVG spinning ring */
+.deriving-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: spin-ring 1.6s linear infinite;
+}
+
+.deriving-ring-track {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 3;
+}
+
+.deriving-ring-progress {
+  fill: none;
+  stroke: url(#ring-gradient);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 160;
+  stroke-dashoffset: 40;
+}
+
+/* Bitcoin icon in center */
+.deriving-ring-icon {
+  position: relative;
+  z-index: 1;
+  color: var(--primary);
+}
+
+/* ============================================================
+   STEP INDICATOR — CONNECTOR GRADIENT
+   ============================================================ */
+
+.step-connector-completed {
+  background: var(--foreground);
+}
+
+.step-connector-pending {
+  background: var(--step-inactive-bg);
+}
+
+.step-connector-partial {
+  background: linear-gradient(
+    to right,
+    var(--foreground) 0%,
+    var(--step-inactive-bg) 100%
+  );
+}
+
+/* ============================================================
+   FILE DROP ZONE — ANIMATED BORDER
+   ============================================================ */
+
+/* Gradient animated border on drag-over via pseudo-element */
+.drop-zone-active {
+  position: relative;
+  border-color: transparent !important;
+}
+
+.drop-zone-active::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: calc(var(--radius-surface) + 2px);
+  background: conic-gradient(
+    from var(--border-angle, 0deg),
+    #fe7921 0deg,
+    #ffb060 90deg,
+    #fe7921 180deg,
+    #df600d 270deg,
+    #fe7921 360deg
+  );
+  animation: border-spin 2s linear infinite;
+  z-index: -1;
+  /* Fallback for browsers that don't support @property */
+  background: linear-gradient(var(--primary), var(--primary)) padding-box,
+    conic-gradient(#fe7921, #ffb060, #fe7921, #df600d, #fe7921) border-box;
+}
+
+.drop-zone-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-surface);
+  background: rgba(254, 121, 33, 0.06);
+  z-index: 0;
+}
+
+.drop-zone-icon-bouncing {
+  animation: icon-bounce 0.6s ease infinite;
+}
+
+/* File loaded state */
+.drop-zone-loaded {
+  border-color: var(--success) !important;
+  background: rgba(18, 183, 106, 0.04) !important;
+}
+
+/* ============================================================
+   CODE BLOCK — MONOSPACE TREATMENT
+   ============================================================ */
+
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--radius-base);
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.code-block::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--primary), transparent);
+  opacity: 0.5;
+}
+
+.code-block pre {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--code-text);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+/* ============================================================
+   SECURITY BADGE — SHIMMER EFFECT
+   ============================================================ */
+
+.security-badge-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(254, 121, 33, 0.15) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+/* ============================================================
+   PASSWORD INPUT — PREMIUM INNER SHADOW
+   ============================================================ */
+
+.input-premium {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition:
+    box-shadow 200ms ease,
+    border-color 200ms ease !important;
+}
+
+.input-premium:focus {
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.04),
+    0 0 0 3px rgba(254, 121, 33, 0.12),
+    0 0 0 1px rgba(254, 121, 33, 0.4);
+}
+
+/* ============================================================
+   WALLET GUIDE — TABS UNDERLINE STYLE
+   ============================================================ */
+
+.wallet-tab-underline {
+  position: relative;
+  padding-bottom: 10px;
+}
+
+.wallet-tab-underline::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wallet-tab-underline[aria-selected='true']::after {
+  transform: scaleX(1);
+}
+
+/* Step numbered list items */
+.step-list-item {
+  counter-increment: step-counter;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+}
+
+.step-list-item::before {
+  content: counter(step-counter);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(254, 121, 33, 0.1);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.step-list {
+  counter-reset: step-counter;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
