@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import logoSvg from '/logo/logo-light.svg?raw'
 
 type AppLayoutProps = {
   children: ReactNode
@@ -29,26 +30,22 @@ export function AppLayout({ children, className, onReset }: AppLayoutProps) {
         aria-hidden="true"
       />
 
-      {/* Logo — top left */}
+      {/* Logo — top left (SVG inlined for offline file:// support) */}
       <div className="absolute left-6 top-6 z-20 h-7 w-[120px] md:left-[70px] md:top-[60px] md:w-[150px]">
         {onReset ? (
           <button
             type="button"
             onClick={onReset}
-            className="size-full rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-opacity hover:opacity-75"
+            className="size-full rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-opacity hover:opacity-75 [&_svg]:size-full"
             aria-label="BTCBacked — return to start"
-          >
-            <img
-              src="/logo/logo-light.svg"
-              alt="BTCBacked"
-              className="size-full object-contain"
-            />
-          </button>
+            dangerouslySetInnerHTML={{ __html: logoSvg }}
+          />
         ) : (
-          <img
-            src="/logo/logo-light.svg"
-            alt="BTCBacked"
-            className="size-full object-contain"
+          <div
+            className="size-full [&_svg]:size-full"
+            role="img"
+            aria-label="BTCBacked"
+            dangerouslySetInnerHTML={{ __html: logoSvg }}
           />
         )}
       </div>

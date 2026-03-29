@@ -28,9 +28,10 @@ jobs:
       # Upload to the GitHub Release
       - name: Upload release asset
         if: github.event_name == 'release'
-        run: gh release upload "${{ github.event.release.tag_name }}" btc-recovery-web.zip --clobber
+        run: gh release upload "$TAG" btc-recovery-web.zip --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
 
       # For manual runs, upload as artifact
       - name: Upload artifact
