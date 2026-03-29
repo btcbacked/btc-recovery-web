@@ -7,7 +7,7 @@
     <meta name="description" content="BTCBacked Key Recovery Tool - Recover your Bitcoin signing keys offline" />
     <!--
       PRODUCTION CSP: uncomment and deploy this header via your web server or CDN instead.
-      All crypto runs client-side; no external network calls are made in production.
+      All crypto runs client-side. Only mempool.space is contacted for UTXO queries and broadcasting.
 
       Content-Security-Policy:
         default-src 'none';
@@ -15,13 +15,13 @@
         style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
         img-src 'self' data:;
         font-src 'self' https://fonts.gstatic.com;
-        connect-src 'none';
+        connect-src 'self' https://mempool.space https://*.mempool.space;
         frame-ancestors 'none';
         base-uri 'self';
         form-action 'none';
     -->
     <!-- DEV CSP: allows Vite HMR websocket, localhost connections, and Google Fonts -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:*; frame-ancestors 'none'; base-uri 'self'; form-action 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:* https://mempool.space https://*.mempool.space; frame-ancestors 'none'; base-uri 'self'; form-action 'none';" />
     <title>BTCBacked Key Recovery</title>
     <link rel="icon" type="image/svg+xml" href="/logo/favicon.svg" />
     <!-- Outfit font — same as webapp-v2 -->
