@@ -64,16 +64,14 @@ export function WalletGuideStep({ onReset, onBackToDescriptor }: WalletGuideStep
           hidden={activeTab !== 'Sparrow Wallet'}
         >
           <ol className="step-list space-y-3">
-            <li className="step-list-item text-sm text-foreground">Open Sparrow Wallet and go to <strong>File &rarr; New Wallet</strong></li>
-            <li className="step-list-item text-sm text-foreground">Name the wallet (e.g., "BTCBacked Recovery")</li>
-            <li className="step-list-item text-sm text-foreground">Select <strong>Multi Signature</strong> policy type</li>
-            <li className="step-list-item text-sm text-foreground">Click on the <strong>Keystores</strong> tab</li>
-            <li className="step-list-item text-sm text-foreground">For your keystore, click <strong>xPub / Watch Only Wallet</strong></li>
-            <li className="step-list-item text-sm text-foreground">Paste the full descriptor in the <strong>Output Descriptor</strong> field</li>
-            <li className="step-list-item text-sm text-foreground">Sparrow will parse the descriptor and populate all keystores</li>
-            <li className="step-list-item text-sm text-foreground">Click <strong>Apply</strong> to finalize the wallet</li>
+            <li className="step-list-item text-sm text-foreground">Open Sparrow Wallet and go to <strong>File &rarr; Import Wallet</strong></li>
+            <li className="step-list-item text-sm text-foreground">Select <strong>Output Descriptor</strong> as the import format</li>
+            <li className="step-list-item text-sm text-foreground">Paste the full descriptor (which contains your private key)</li>
+            <li className="step-list-item text-sm text-foreground">Click <strong>Import</strong></li>
+            <li className="step-list-item text-sm text-foreground">Sparrow will detect the multisig configuration and your signing key automatically</li>
+            <li className="step-list-item text-sm text-foreground">Name the wallet (e.g., "BTCBacked Recovery") and click <strong>Apply</strong></li>
             <li className="step-list-item text-sm text-foreground">Navigate to the <strong>Transactions</strong> tab to see your UTXOs</li>
-            <li className="step-list-item text-sm text-foreground">Use <strong>Send</strong> to create a transaction &mdash; sign with your key when prompted</li>
+            <li className="step-list-item text-sm text-foreground">Use <strong>Send</strong> to create a transaction &mdash; Sparrow will sign with your key automatically</li>
           </ol>
         </div>
 
