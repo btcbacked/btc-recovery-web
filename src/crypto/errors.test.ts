@@ -73,8 +73,8 @@ describe('RecoveryError', () => {
       'DESCRIPTOR_ERROR',
     ]
 
-    it('has exactly 8 error codes defined in ERROR_MESSAGES', () => {
-      expect(Object.keys(ERROR_MESSAGES)).toHaveLength(8)
+    it('has exactly 12 error codes defined in ERROR_MESSAGES', () => {
+      expect(Object.keys(ERROR_MESSAGES)).toHaveLength(12)
     })
 
     for (const code of allCodes) {

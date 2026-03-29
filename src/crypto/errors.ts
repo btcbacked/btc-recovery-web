@@ -7,6 +7,10 @@ export type RecoveryErrorCode =
   | 'FINGERPRINT_MISMATCH'
   | 'DERIVATION_ERROR'
   | 'DESCRIPTOR_ERROR'
+  | 'NETWORK_ERROR'
+  | 'PSBT_ERROR'
+  | 'TRANSACTION_ERROR'
+  | 'ADDRESS_ERROR'
 
 export class RecoveryError extends Error {
   constructor(
@@ -35,4 +39,12 @@ export const ERROR_MESSAGES: Record<RecoveryErrorCode, string> = {
   DERIVATION_ERROR: 'An error occurred during key derivation. Please try again.',
   DESCRIPTOR_ERROR:
     'An error occurred while preparing the output descriptor.',
+  NETWORK_ERROR:
+    'A network error occurred while communicating with the blockchain API. Check your connection.',
+  PSBT_ERROR:
+    'An error occurred while processing the partially signed Bitcoin transaction.',
+  TRANSACTION_ERROR:
+    'An error occurred while building or broadcasting the transaction.',
+  ADDRESS_ERROR:
+    'An error occurred while deriving a multisig address from the descriptor.',
 }

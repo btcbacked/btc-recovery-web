@@ -44,51 +44,83 @@ src/
   App.tsx               # Root: AppLayout + RecoveryWizard + Toaster
   styles.css            # Tailwind entry, CSS custom properties (design tokens), dark mode
   crypto/               # Pure TypeScript crypto modules (no React)
-    recovery-file.ts    # RecoveryFile type + parser/validator
-    derivation.ts       # BIP39 seed → BIP32 master key → signing key derivation
-    descriptor.ts       # Output descriptor manipulation and checksum
-    profiles.ts         # Named derivation profiles (maps profile id → algo + path)
-    validation.ts       # Fingerprint, hex, derivation path validators
-    errors.ts           # RecoveryError class + typed error codes
-    index.ts            # Barrel export for all crypto modules
+    descriptor-parser.ts  # Parse output descriptors
+    address.ts            # Derive addresses from descriptors
+    blockchain-api.ts     # Mempool.space integration (fetch UTXOs, broadcast txs)
+    psbt-builder.ts       # Create PSBT from UTXOs
+    psbt-signer.ts        # Sign PSBT transactions
+    psbt-finalizer.ts     # Finalize and extract signed transactions
+    psbt-codec.ts         # Encode/decode PSBT binary format
+    networks.ts           # Bitcoin network config (mainnet/testnet/signet/regtest)
+    bitcoin-lib.ts        # bitcoinjs-lib & ecpair wrapper
+    recovery-file.ts      # RecoveryFile type + parser/validator
+    derivation.ts         # BIP39 seed → BIP32 master key → signing key derivation
+    descriptor.ts         # Output descriptor manipulation and checksum
+    profiles.ts           # Named derivation profiles (maps profile id → algo + path)
+    validation.ts         # Fingerprint, hex, derivation path validators
+    errors.ts             # RecoveryError class + typed error codes
+    index.ts              # Barrel export for all crypto modules
   hooks/
-    useRecoveryWizard.ts  # Wizard state machine (step, recoveryFile, descriptor, errors)
-    useDerivation.ts      # Async key derivation with loading/error state
-    useClipboard.ts       # Clipboard write with transient success state
-    useTheme.ts           # Dark/light theme toggle, persisted to localStorage
+    useRecoveryWizard.ts    # Wizard state machine (step, recoveryFile, descriptor, errors)
+    useDerivation.ts        # Async key derivation with loading/error state
+    useClipboard.ts         # Clipboard write with transient success state
+    useTheme.ts             # Dark/light theme toggle, persisted to localStorage
+    useNetworkConfig.ts     # Network selection and Mempool.space config
+    useWalletState.ts       # Recovered keys and transaction state
+    usePsbtWorkflow.ts      # PSBT creation, signing, and broadcasting
   lib/
-    utils.ts            # cn() helper (clsx + tailwind-merge)
+    utils.ts              # cn() helper (clsx + tailwind-merge)
   components/
-    AppLayout.tsx       # Page chrome: header (logo, theme toggle), main, footer
-    RecoveryWizard.tsx  # Orchestrator: reads wizard state, renders the active step
-    StepIndicator.tsx   # Progress bar showing current wizard position
-    FileDropZone.tsx    # Drag-and-drop + file picker for the recovery JSON
-    CopyButton.tsx      # Icon button that copies text to clipboard
-    NetworkBadge.tsx    # Pill showing mainnet/testnet/signet/regtest
-    SecurityBadge.tsx   # "All operations local" trust indicator
+    AppLayout.tsx         # Page chrome: header (logo, theme toggle), main, footer
+    RecoveryWizard.tsx    # Orchestrator: reads wizard state, renders the active step
+    StepIndicator.tsx     # Progress bar showing current wizard position
+    FileDropZone.tsx      # Drag-and-drop + file picker for the recovery JSON
+    CopyButton.tsx        # Icon button that copies text to clipboard
+    NetworkBadge.tsx      # Pill showing mainnet/testnet/signet/regtest
+    SecurityBadge.tsx     # "All operations local" trust indicator
     steps/
-      UploadStep.tsx    # Step 1: drop or select recovery file
-      FileInfoStep.tsx  # Step 2: display parsed file metadata, confirm
-      PasswordStep.tsx  # Step 3a: enter passphrase (PASSWORD key source)
-      HardwareStep.tsx  # Step 3b: instructions for ColdCard (COLD_CARD key source)
-      DerivingStep.tsx  # Step 4: async derivation in progress
-      ResultStep.tsx    # Step 5: show recovered xprv + descriptor
-      WalletGuideStep.tsx # Step 6: wallet-specific import instructions
+      UploadStep.tsx          # Step 1: drop or select recovery file
+      FileInfoStep.tsx        # Step 2: display parsed file metadata, confirm
+      PasswordStep.tsx        # Step 3a: enter passphrase (PASSWORD key source)
+      HardwareStep.tsx        # Step 3b: instructions for ColdCard (COLD_CARD key source)
+      DerivingStep.tsx        # Step 4: async derivation in progress
+      ResultStep.tsx          # Step 5: show recovered xprv + descriptor
+      ActionChoiceStep.tsx    # Step 6a: choose Path A or Path B
+      WalletViewStep.tsx      # Path A, Step 6b: view addresses and balances
+      BuildTxStep.tsx         # Path A, Step 6c: create PSBT transaction
+      ReviewSignStep.tsx      # Path A, Step 6d: review and sign transaction
+      ExportPsbtStep.tsx      # Path A, Step 6e: export signed PSBT
+      ImportPsbtStep.tsx      # Path B, Step 6b: import PSBT from file
+      ReviewPsbtStep.tsx      # Path B, Step 6c: review co-sign transaction
+      SignFinalizeStep.tsx    # Path B, Step 6d: sign and finalize PSBT
+      BroadcastStep.tsx       # Path B, Step 6e: broadcast to blockchain
+      GuideStep.tsx           # External wallet import guide
 ```
 
 ### Wizard Flow
 
 ```
-upload → info → password | hardware → deriving → result → guide
-  1        2          3                   4          5       6
+upload → info → password | hardware → deriving → result → action-choice
+  1        2          3                   4          5          6a
+                                                                  ├─ Path A: wallet-view → build-tx → review-sign → export-psbt
+                                                                  │     6b          6c         6d           6e
+                                                                  ├─ Path B: import-psbt → review-psbt → sign-finalize → broadcast
+                                                                  │     6b          6c            6d           6e
+                                                                  └─ guide (external wallet import)
 ```
 
 - The step after `info` branches on `userKey.keySource`: `PASSWORD` → `PasswordStep`, `COLD_CARD` → `HardwareStep`.
 - `DerivingStep` calls `useDerivation` which runs BIP39/BIP32 derivation asynchronously, then transitions automatically to `result`.
-- `WalletGuideStep` provides wallet-specific import instructions (Sparrow, Specter, Bitcoin Core).
+- `ActionChoiceStep` presents three options:
+  - **Path A**: Create and broadcast your own transactions (single-sig or broadcasting from a multisig escrow).
+  - **Path B**: Co-sign and broadcast transactions initiated by other parties.
+  - **Guide**: Import recovered keys into external wallets (Sparrow, Specter, Bitcoin Core).
+- **Path A** (`WalletViewStep` → `BuildTxStep` → `ReviewSignStep` → `ExportPsbtStep`): Derive addresses, fetch UTXOs, build and sign transactions.
+- **Path B** (`ImportPsbtStep` → `ReviewPsbtStep` → `SignFinalizeStep` → `BroadcastStep`): Upload co-sign PSBTs, add your signature, and broadcast.
 
 ### Crypto Data Flow
 
+#### Recovery & Key Derivation
 ```
 Recovery JSON file
   └─ parseRecoveryFile()          → RecoveryFile (typed, validated)
@@ -102,10 +134,33 @@ Recovery JSON file
   └─ descriptorChecksum()         → appended checksum (Bitcoin descriptor spec)
 ```
 
+#### PSBT Data Flow (Path A & B)
+```
+Output Descriptor
+  └─ parseDescriptor()            → descriptor structure
+       └─ deriveAddresses()        → array of payment addresses
+            └─ fetchUtxos()        → Mempool.space API → UTXOs with amounts/txids
+                 └─ buildPsbt()    → unsigned PSBT transaction
+                      └─ signPsbt()       → add signatures using recovered key
+                           └─ finalizePsbt()  → extract fully-signed transaction
+                                └─ broadcast()  → Mempool.space API → Bitcoin network
+```
+
 ## Important Notes
 
-- **No network requests in production.** The production CSP in `index.html` (kept as a comment) blocks all outbound connections. The active dev CSP allows `connect-src localhost:*` for Vite HMR only.
-- **Buffer polyfill required.** `bip32` and `@bitcoinerlab/secp256k1` rely on Node's `Buffer`. It is patched onto `globalThis` in `main.tsx` before any other import and also in `vitest.config.ts` via `define: { global: 'globalThis' }`.
+- **Blockchain API Integration.** The tool now connects to Mempool.space API for:
+  - Fetching UTXOs for address balance queries
+  - Broadcasting fully-signed transactions
+  - Supported networks: mainnet, testnet, signet, regtest
+  - Network selection is automatic based on `recovery file.network`
+- **Content Security Policy.** The production CSP in `index.html` allows `connect-src` to:
+  - `mempool.space`, `testnet.mempool.space`, `signet.mempool.space`
+  - The active dev CSP also allows `connect-src localhost:*` for Vite HMR
+- **Bitcoin Libraries.** The tool uses:
+  - `bitcoinjs-lib` — for PSBT creation, signing, and finalization
+  - `ecpair` — for keypair operations and transaction signing
+  - `bip32` and `@bitcoinerlab/secp256k1` — for key derivation
+- **Buffer polyfill required.** `bip32`, `bitcoinjs-lib`, and `@bitcoinerlab/secp256k1` rely on Node's `Buffer`. It is patched onto `globalThis` in `main.tsx` before any other import and also in `vitest.config.ts` via `define: { global: 'globalThis' }`.
 - **Vite base is `'./'`** to support deployment from any subdirectory path (e.g., GitHub Pages, S3 subfolder).
 - **`tailwindcss` and `tw-animate-css` are devDependencies** — they are compile-time tools, not runtime imports.
 - **No ESLint yet.** The `lint` script is a placeholder.
