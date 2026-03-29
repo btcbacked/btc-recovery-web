@@ -20,8 +20,8 @@
         base-uri 'self';
         form-action 'none';
     -->
-    <!-- DEV CSP: allows Vite HMR websocket, localhost connections, and Google Fonts -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws://localhost:* http://localhost:* https://mempool.space https://*.mempool.space; frame-ancestors 'none'; base-uri 'self'; form-action 'none';" />
+    <!-- CSP should be deployed as a server header (see comment above), not as a meta tag.
+         A meta tag CSP breaks file:// offline usage because 'self' resolves to origin 'null'. -->
     <title>BTCBacked Key Recovery</title>
     <link rel="icon" type="image/svg+xml" href="/logo/favicon.svg" />
     <!-- Outfit font — same as webapp-v2 -->
