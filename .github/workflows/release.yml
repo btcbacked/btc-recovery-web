@@ -1,0 +1,41 @@
+name: Build Release ZIP
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+      # Package dist/ into a ZIP users can download and open index.html directly
+      - name: Create release ZIP
+        run: cd dist && zip -r ../btc-recovery-web.zip . && cd ..
+
+      # Upload to the GitHub Release
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        run: gh release upload "${{ github.event.release.tag_name }}" btc-recovery-web.zip --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # For manual runs, upload as artifact
+      - name: Upload artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: btc-recovery-web
+          path: btc-recovery-web.zip
