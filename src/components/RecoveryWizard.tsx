@@ -104,7 +104,7 @@ export function RecoveryWizard() {
     sign: psbtSign,
     importPsbt: psbtImport,
     finalizeAndBroadcast: psbtFinalizeAndBroadcast,
-    getBuffer: psbtGetBuffer,
+
     reset: psbtReset,
   } = psbtWorkflow
 
@@ -248,9 +248,9 @@ export function RecoveryWizard() {
   }, [psbtSign, psbtWorkflow.psbt, wizard.xprv, wizard.recoveryFile, wizard.parsedDescriptor, setStep])
 
   const handleDownloadPsbt = useCallback(() => {
-    const buf = psbtGetBuffer()
-    if (!buf) return
-    const blob = new Blob([buf], { type: 'application/octet-stream' })
+    const base64 = psbtWorkflow.getBase64()
+    if (!base64) return
+    const blob = new Blob([base64], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -259,7 +259,7 @@ export function RecoveryWizard() {
     a.click()
     document.body.removeChild(a)
     setTimeout(() => URL.revokeObjectURL(url), 100)
-  }, [psbtGetBuffer])
+  }, [psbtWorkflow])
 
   // ── Handlers: Path B — import-psbt → review-psbt → sign-finalize → broadcast
 

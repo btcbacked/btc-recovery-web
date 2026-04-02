@@ -40,16 +40,16 @@ export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps)
       const reader = new FileReader()
       reader.onload = (e) => {
         const result = e.target?.result
-        if (result instanceof ArrayBuffer) {
+        if (typeof result === 'string') {
           setHasFileLoaded(true)
-          onImport(result)
+          onImport(result.trim())
         }
       }
       reader.onerror = () => {
         setLocalError('Failed to read the file.')
         setFileName(null)
       }
-      reader.readAsArrayBuffer(file)
+      reader.readAsText(file)
     },
     [onImport],
   )
