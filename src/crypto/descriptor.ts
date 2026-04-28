@@ -15,7 +15,7 @@ function polymod(c: bigint, val: number): bigint {
   if (c0 & 2) c ^= 0xa9fdca3312n
   if (c0 & 4) c ^= 0x1bab10e32dn
   if (c0 & 8) c ^= 0x3706b1677an
-  if (c0 & 16) c ^= 0x644d626fcdn
+  if (c0 & 16) c ^= 0x644d626ffdn
   return c
 }
 
