@@ -16,6 +16,31 @@ function extractChecksum(descriptor: string): string {
   return descriptor.split('#')[1] ?? ''
 }
 
+function hasValidChecksum(descriptor: string): boolean {
+  const parts = descriptor.split('#')
+  if (parts.length !== 2) {
+    return false
+  }
+
+  const body = parts[0] ?? ''
+  const checksum = parts[1] ?? ''
+  const CHECKSUM_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l'
+
+  if (checksum.length !== 8) {
+    return false
+  }
+
+  if (!checksum.split('').every(ch => CHECKSUM_CHARSET.includes(ch))) {
+    return false
+  }
+
+  try {
+    return descriptorChecksum(body) === checksum
+  } catch {
+    return false
+  }
+}
+
 // ---------------------------------------------------------------------------
 // descriptorChecksum
 // ---------------------------------------------------------------------------
@@ -68,6 +93,31 @@ describe('descriptorChecksum', () => {
     expect(checksum).toHaveLength(8)
     // Round-trip: compute again and check equal
     expect(descriptorChecksum(fixtureDescriptor)).toBe(checksum)
+  })
+
+  it('matches the BIP-380 test vector raw(deadbeef) -> 89f8spxm', () => {
+    expect(descriptorChecksum('raw(deadbeef)')).toBe('89f8spxm')
+  })
+
+  it('matches BIP-380 checksum validity vectors', () => {
+    const valid = ['raw(deadbeef)#89f8spxm']
+    const invalid = [
+      'raw(deadbeef)',
+      'raw(deadbeef)#',
+      'raw(deadbeef)#89f8spxmx',
+      'raw(deadbeef)#89f8spx',
+      'raw(deedbeef)#89f8spxm',
+      'raw(deadbeef)#99f8spxm',
+      'raw(Ü)#00000000',
+    ]
+
+    for (const descriptor of valid) {
+      expect(hasValidChecksum(descriptor)).toBe(true)
+    }
+
+    for (const descriptor of invalid) {
+      expect(hasValidChecksum(descriptor)).toBe(false)
+    }
   })
 })
 
