@@ -61,11 +61,6 @@ describe('descriptorChecksum', () => {
     }
   })
 
-  it('is deterministic — same input always produces same checksum', () => {
-    const desc = "wsh(sortedmulti(2,[ABCD1234/48'/0'/0'/2']xpubABC,[5678EF90/48'/0'/0'/2']xpubDEF))"
-    expect(descriptorChecksum(desc)).toBe(descriptorChecksum(desc))
-  })
-
   it('different descriptors produce different checksums', () => {
     const desc1 = "wsh(sortedmulti(2,[ABCD1234/48'/0'/0'/2']xpubAAA,[5678EF90/48'/0'/0'/2']xpubBBB))"
     const desc2 = "wsh(sortedmulti(2,[ABCD1234/48'/0'/0'/2']xpubCCC,[5678EF90/48'/0'/0'/2']xpubDDD))"
@@ -88,11 +83,7 @@ describe('descriptorChecksum', () => {
     // Use the body from the password fixture (strip the checksum if any)
     const fixtureDescriptor =
       "wsh(sortedmulti(2,[ABCD1234/48'/1'/0'/2']tpubDCxzhZZE3JFMcGNHVVdFh9r1nJ8RvmvXHxYCBjnRNdRNynnD2eLF9TUwP3CwrUUCLco6nBjiH3xYdPHrSbXqME93vgzC9MRfZ2Kb9K2hL5C/0/*,[5678EF90/48'/1'/0'/2']tpubDDG7ZFcGNJfMcGMk6vBPZs8cXNUfVvxc3nSvRJaU3HxFZqYMrK3Db5ZvhGJDmMvqFR8CDHvGLkL6v5P3gKxL9N5VZces1VwYJDZPVPXNYM/0/*,[FF00FF00/48'/1'/0'/2']tpubDDSNULZRYcSjfS8W1aLFCd2qrPwC9bDxQ8LDvtw7z4DEEfUckqAjHJ6LvKHfLLJLPqSE1oMRNffFk5cpxoXWvUELLxQPjF8gnQLFaJek5Zf/0/*))"
-    const checksum = descriptorChecksum(fixtureDescriptor)
-    // Verify it is stable (length and charset)
-    expect(checksum).toHaveLength(8)
-    // Round-trip: compute again and check equal
-    expect(descriptorChecksum(fixtureDescriptor)).toBe(checksum)
+    expect(descriptorChecksum(fixtureDescriptor)).toBe('yrdyhnmc')
   })
 
   it('matches the BIP-380 test vector raw(deadbeef) -> 89f8spxm', () => {
@@ -251,14 +242,6 @@ describe('replaceKeyByFingerprint', () => {
     expect(result).not.toContain('#oldchecksum')
     // Must contain the replacement key
     expect(result).toContain('xprvABCDEFGHIJKLMNOP')
-  })
-
-  it('result without the old checksum has a valid 8-char checksum appended', () => {
-    const descriptor =
-      "wsh(sortedmulti(2,[ABCD1234/48'/0'/0'/2']xpubABCDEF,[5678EF90/48'/0'/0'/2']xpubGHIJKL))#oldchecksum"
-    const result = replaceKeyByFingerprint(descriptor, 'ABCD1234', 'xprvABCDEFGHIJKLMNOP')
-    const checksum = extractChecksum(result)
-    expect(checksum).toHaveLength(8)
   })
 
   it('result checksum matches freshly computed checksum of the body', () => {
