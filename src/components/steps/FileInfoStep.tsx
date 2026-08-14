@@ -1,4 +1,5 @@
 import { NetworkBadge } from '@/components/NetworkBadge'
+import { describeKeySource } from '@/crypto'
 import type { RecoveryFile } from '@/crypto'
 
 type FileInfoStepProps = {
@@ -37,7 +38,7 @@ export function FileInfoStep({ file, onConfirm, onBack }: FileInfoStepProps) {
             {file.context.threshold}-of-{file.context.totalKeys}
           </InfoRow>
           <InfoRow label="Key Type">
-            {file.userKey.keySource === 'PASSWORD' ? 'Password-derived' : 'Hardware Wallet (ColdCard)'}
+            {describeKeySource(file.userKey.keySource)}
           </InfoRow>
           <InfoRow label="Fingerprint">
             <span className="font-mono text-xs">{file.userKey.fingerprint}</span>

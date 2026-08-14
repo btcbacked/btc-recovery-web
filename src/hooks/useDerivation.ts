@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { deriveSigningKey, replaceKeyByFingerprint, getProfile, RecoveryError } from '@/crypto'
+import { deriveSigningKey, replaceKeyByFingerprint, getProfile, isPasswordKeySource, RecoveryError } from '@/crypto'
 import type { RecoveryFile } from '@/crypto'
 
 type DerivationState = {
@@ -21,7 +21,7 @@ export function useDerivation() {
       setState({ isDeriving: true, error: null })
 
       try {
-        if (file.userKey.keySource !== 'PASSWORD') {
+        if (!isPasswordKeySource(file.userKey.keySource)) {
           throw new RecoveryError(
             'HARDWARE_KEY',
             'Hardware wallet key detected. No password needed — import the descriptor directly into your wallet software.',

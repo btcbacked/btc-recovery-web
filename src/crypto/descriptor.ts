@@ -65,6 +65,21 @@ export function descriptorChecksum(descriptor: string): string {
 }
 
 /**
+ * Return the descriptor with a correct BIP-380 checksum attached.
+ *
+ * Any existing checksum is recomputed rather than trusted, so a file written
+ * without one (or with a stale one) still imports. Bitcoin Core refuses a
+ * descriptor whose checksum is missing or wrong.
+ *
+ * This only appends a typo-detection suffix. It does not change any key, path
+ * or address.
+ */
+export function withChecksum(descriptor: string): string {
+  const body = descriptor.trim().split('#')[0] ?? ''
+  return `${body}#${descriptorChecksum(body)}`
+}
+
+/**
  * Replace an xpub with an xprv in a descriptor, matching by fingerprint.
  * Case-insensitive fingerprint matching. Recalculates checksum.
  *

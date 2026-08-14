@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { descriptorChecksum, replaceKeyByFingerprint } from './descriptor'
+import { descriptorChecksum, replaceKeyByFingerprint, withChecksum } from './descriptor'
 import { RecoveryError } from './errors'
 
 // ---------------------------------------------------------------------------
@@ -330,5 +330,51 @@ describe('replaceKeyByFingerprint', () => {
     // Count occurrences of xpub in body
     const xpubCount = (bodyAfterReplace.match(/xpub/g) ?? []).length
     expect(xpubCount).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// withChecksum
+//
+// The hardware path hands the user the recovery file's own descriptor, which
+// is not guaranteed to carry a checksum. Bitcoin Core refuses a descriptor
+// whose checksum is missing or wrong, so it is attached here.
+// ---------------------------------------------------------------------------
+
+describe('withChecksum', () => {
+  const BODY =
+    "wsh(sortedmulti(2,[ABCD1234/48'/1'/0'/2']tpubAAA/0/*,[5678EF90/48'/1'/0'/2']tpubBBB/0/*))"
+
+  it('appends a checksum to a descriptor that has none', () => {
+    const result = withChecksum(BODY)
+    expect(result.startsWith(`${BODY}#`)).toBe(true)
+    expect(extractChecksum(result)).toHaveLength(8)
+  })
+
+  it('produces a checksum that matches descriptorChecksum for the same body', () => {
+    expect(extractChecksum(withChecksum(BODY))).toBe(descriptorChecksum(BODY))
+  })
+
+  it('leaves the descriptor body byte for byte unchanged', () => {
+    expect(stripChecksum(withChecksum(BODY))).toBe(BODY)
+  })
+
+  it('replaces a wrong checksum rather than trusting it', () => {
+    const result = withChecksum(`${BODY}#zzzzzzzz`)
+    expect(extractChecksum(result)).toBe(descriptorChecksum(BODY))
+    expect(result).not.toContain('zzzzzzzz')
+  })
+
+  it('is idempotent', () => {
+    const once = withChecksum(BODY)
+    expect(withChecksum(once)).toBe(once)
+  })
+
+  it('trims surrounding whitespace before checksumming', () => {
+    expect(withChecksum(`  ${BODY}  `)).toBe(withChecksum(BODY))
+  })
+
+  it('throws a RecoveryError for a descriptor containing an illegal character', () => {
+    expect(() => withChecksum('wsh(sortedmulti(2,é))')).toThrow(RecoveryError)
   })
 })

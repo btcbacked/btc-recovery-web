@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { parseDescriptor, findUserKey } from './descriptor-parser'
+import { parseDescriptor, findUserKey, usesStandardChildDerivation } from './descriptor-parser'
 import { RecoveryError } from './errors'
 
 // ---------------------------------------------------------------------------
@@ -201,5 +201,49 @@ describe('findUserKey', () => {
     const result = findUserKey(parsed, 'AbCd1234')
     expect(result).not.toBeNull()
     expect(result!.index).toBe(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// usesStandardChildDerivation
+//
+// deriveMultisigAddress always derives /0/<index> and never reads the child
+// derivation the descriptor names. Any descriptor that says something else
+// describes a wallet this tool cannot reproduce.
+// ---------------------------------------------------------------------------
+
+describe('usesStandardChildDerivation', () => {
+  const TPUB_A =
+    'tpubDCxzhZZE3JFMcGNHVVdFh9r1nJ8RvmvXHxYCBjnRNdRNynnD2eLF9TUwP3CwrUUCLco6nBjiH3xYdPHrSbXqME93vgzC9MRfZ2Kb9K2hL5C'
+  const TPUB_B =
+    'tpubDDG7ZFcGNJfMcGMk6vBPZs8cXNUfVvxc3nSvRJaU3HxFZqYMrK3Db5ZvhGJDmMvqFR8CDHvGLkL6v5P3gKxL9N5VZces1VwYJDZPVPXNYM'
+
+  const build = (suffixA: string, suffixB: string) =>
+    parseDescriptor(
+      `wsh(sortedmulti(2,[ABCD1234/48'/1'/0'/2']${TPUB_A}${suffixA},[5678EF90/48'/1'/0'/2']${TPUB_B}${suffixB}))`,
+    )
+
+  it('is true when every key uses /0/*', () => {
+    expect(usesStandardChildDerivation(build('/0/*', '/0/*'))).toBe(true)
+  })
+
+  it('is true for the real fixture descriptor', () => {
+    expect(usesStandardChildDerivation(parseDescriptor(FIXTURE_DESCRIPTOR))).toBe(true)
+  })
+
+  it('is false when a key is pinned to a fixed child index', () => {
+    expect(usesStandardChildDerivation(build('/0/5', '/0/*'))).toBe(false)
+  })
+
+  it('is false when every key is pinned to a different child index', () => {
+    expect(usesStandardChildDerivation(build('/0/5', '/0/7'))).toBe(false)
+  })
+
+  it('is false when a key uses the change branch', () => {
+    expect(usesStandardChildDerivation(build('/1/*', '/0/*'))).toBe(false)
+  })
+
+  it('is false when a key carries no child derivation at all', () => {
+    expect(usesStandardChildDerivation(build('', '/0/*'))).toBe(false)
   })
 })
