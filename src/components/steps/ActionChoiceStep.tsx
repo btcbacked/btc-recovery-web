@@ -71,7 +71,7 @@ export function ActionChoiceStep({
             className="input-premium w-full rounded-[var(--radius-base)] border border-border bg-[var(--input-bg)] px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
           />
           <p className="text-xs text-muted-foreground">
-            Required for regtest — point to your local mempool instance.
+            Required for regtest. Point to your local mempool instance.
           </p>
         </div>
       )}

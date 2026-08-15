@@ -28,8 +28,10 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
         </p>
       </div>
 
+      {/* whitespace-pre-line: the longer messages are a lead sentence followed
+          by a short list, and the line breaks carry that shape. */}
       {error && (
-        <div className="rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+        <div className="whitespace-pre-line rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
           {error}
         </div>
       )}

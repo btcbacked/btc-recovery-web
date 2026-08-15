@@ -15,6 +15,21 @@ import { RecoveryError } from './errors'
 import { bitcoin, ecc } from './bitcoin-lib'
 import { BIP32Factory } from 'bip32'
 import { Buffer } from 'buffer'
+import {
+  USER_ORIGIN_NODE,
+  USER_ORIGIN_PATH,
+  USER_FINGERPRINT,
+  USER_XPRV,
+  USER_MASTER,
+  COSIGNER_ORIGIN_NODE,
+  COSIGNER_ORIGIN_PATH,
+  COSIGNER_FINGERPRINT,
+  COSIGNER_XPRV,
+  PLATFORM_ORIGIN_NODE,
+  PLATFORM_ORIGIN_PATH,
+  PLATFORM_FINGERPRINT,
+  PLATFORM_XPRV,
+} from './__fixtures__/deep-paths'
 
 const bip32 = BIP32Factory(ecc)
 const NET = bitcoin.networks.testnet
@@ -246,5 +261,175 @@ describe('signPsbtWithXprv', () => {
     }
     const sigs = psbt.data.inputs[0]!.partialSig ?? []
     expect(sigs.length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Signing at the depth production uses
+//
+// The tests above use synthetic 3 level paths (m/0/0/0). Real PSBTs carry an
+// 8 level path for a user key (BIP-48 account, a per contract branch, then
+// chain and index) and a 6 level path for the platform key, in the same input.
+// signPsbtWithXprv reads the last two components positionally, so it must not
+// notice either depth.
+// ---------------------------------------------------------------------------
+
+describe('signPsbtWithXprv at production depth', () => {
+  function childPub(
+    node: typeof USER_ORIGIN_NODE,
+    chain: number,
+    index: number,
+  ): Buffer {
+    return Buffer.from(node.derive(chain).derive(index).publicKey)
+  }
+
+  /**
+   * A 2-of-3 input whose three legs sit at different origin depths, matching
+   * the real descriptor shape.
+   */
+  function buildDeepPsbt(
+    chain: number,
+    index: number,
+    overrides: { userPath?: string } = {},
+  ): { psbt: bitcoin.Psbt; userPub: Buffer; platformPub: Buffer } {
+    const userPub = childPub(USER_ORIGIN_NODE, chain, index)
+    const cosignerPub = childPub(COSIGNER_ORIGIN_NODE, chain, index)
+    const platformPub = childPub(PLATFORM_ORIGIN_NODE, chain, index)
+    const pubkeys = [userPub, cosignerPub, platformPub].sort(Buffer.compare)
+
+    const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys, network: NET })
+    const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms, network: NET })
+
+    const psbt = new bitcoin.Psbt({ network: NET })
+    psbt.addInput({
+      hash: 'a'.repeat(64),
+      index: 0,
+      witnessUtxo: {
+        script: Buffer.from(p2wsh.output!),
+        value: BigInt(500_000),
+      },
+      witnessScript: Buffer.from(p2ms.output!),
+      bip32Derivation: [
+        {
+          masterFingerprint: Buffer.from(USER_FINGERPRINT, 'hex'),
+          pubkey: userPub,
+          path:
+            overrides.userPath ?? `m/${USER_ORIGIN_PATH}/${chain}/${index}`,
+        },
+        {
+          masterFingerprint: Buffer.from(COSIGNER_FINGERPRINT, 'hex'),
+          pubkey: cosignerPub,
+          path: `m/${COSIGNER_ORIGIN_PATH}/${chain}/${index}`,
+        },
+        {
+          masterFingerprint: Buffer.from(PLATFORM_FINGERPRINT, 'hex'),
+          pubkey: platformPub,
+          path: `m/${PLATFORM_ORIGIN_PATH}/${chain}/${index}`,
+        },
+      ],
+    } as any)
+    psbt.addOutput({
+      address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+      value: BigInt(490_000),
+    })
+
+    return { psbt, userPub, platformPub }
+  }
+
+  it('the fixture really is 8 levels for a user key and 6 for the platform', () => {
+    // Guards the test itself: if the fixture ever flattens back to 4 levels,
+    // everything below stops proving anything.
+    expect(`m/${USER_ORIGIN_PATH}/0/0`.split('/')).toHaveLength(9) // 'm' + 8
+    expect(`m/${PLATFORM_ORIGIN_PATH}/0/0`.split('/')).toHaveLength(7) // 'm' + 6
+  })
+
+  it('signs the input with the xprv at the 6 level origin', () => {
+    const { psbt, userPub } = buildDeepPsbt(0, 4)
+
+    const { signedCount } = signPsbtWithXprv(
+      psbt,
+      USER_XPRV,
+      USER_FINGERPRINT,
+      'testnet',
+    )
+
+    expect(signedCount).toBe(1)
+    const sig = psbt.data.inputs[0]!.partialSig![0]!
+    expect(Buffer.compare(sig.pubkey, userPub)).toBe(0)
+  })
+
+  it('signs a change address, taking chain from the path not from a default', () => {
+    const { psbt } = buildDeepPsbt(1, 9)
+
+    signPsbtWithXprv(psbt, USER_XPRV, USER_FINGERPRINT, 'testnet')
+
+    const sig = psbt.data.inputs[0]!.partialSig![0]!
+    expect(
+      Buffer.compare(sig.pubkey, childPub(USER_ORIGIN_NODE, 1, 9)),
+    ).toBe(0)
+  })
+
+  it('signs the shallower platform leg with the same code path', () => {
+    const { psbt, platformPub } = buildDeepPsbt(0, 4)
+
+    const { signedCount } = signPsbtWithXprv(
+      psbt,
+      PLATFORM_XPRV,
+      PLATFORM_FINGERPRINT,
+      'testnet',
+    )
+
+    expect(signedCount).toBe(1)
+    const sig = psbt.data.inputs[0]!.partialSig![0]!
+    expect(Buffer.compare(sig.pubkey, platformPub)).toBe(0)
+  })
+
+  it('signs with the cosigner key on its own branch', () => {
+    const { psbt } = buildDeepPsbt(0, 4)
+
+    const { signedCount } = signPsbtWithXprv(
+      psbt,
+      COSIGNER_XPRV,
+      COSIGNER_FINGERPRINT,
+      'testnet',
+    )
+
+    expect(signedCount).toBe(1)
+    const sig = psbt.data.inputs[0]!.partialSig![0]!
+    expect(
+      Buffer.compare(sig.pubkey, childPub(COSIGNER_ORIGIN_NODE, 0, 4)),
+    ).toBe(0)
+  })
+
+  it('a sibling branch of the same account fails here with a generic message', () => {
+    // Same wallet, same master fingerprint, one level different in the branch.
+    // The fingerprint matches, so the signer reaches the key and only fails
+    // when bitcoinjs finds the pubkey is not in the witness script. What the
+    // customer sees at that point says nothing about a path.
+    //
+    // This is the end of the road that the recovery file consistency check in
+    // derivation.ts exists to close off, several steps earlier.
+    const { psbt } = buildDeepPsbt(0, 4)
+    const siblingXprv = USER_MASTER.derivePath("m/48'/1'/0'/2'/0/8").toBase58()
+
+    try {
+      signPsbtWithXprv(psbt, siblingXprv, USER_FINGERPRINT, 'testnet')
+      expect.fail('signing with the wrong branch should not succeed')
+    } catch (e) {
+      const err = e as RecoveryError
+      expect(err.code).toBe('PSBT_ERROR')
+      expect(err.userMessage).toBe('Failed to sign the transaction.')
+    }
+    expect(psbt.data.inputs[0]!.partialSig ?? []).toHaveLength(0)
+  })
+
+  it('rejects a hardened marker in the last two components at this depth', () => {
+    const { psbt } = buildDeepPsbt(0, 4, {
+      userPath: `m/${USER_ORIGIN_PATH}/0'/4`,
+    })
+
+    expect(() =>
+      signPsbtWithXprv(psbt, USER_XPRV, USER_FINGERPRINT, 'testnet'),
+    ).toThrow(RecoveryError)
   })
 })

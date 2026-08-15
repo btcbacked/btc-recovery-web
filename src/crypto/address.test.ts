@@ -12,6 +12,16 @@ import { RecoveryError } from './errors'
 import { bitcoin, ecc } from './bitcoin-lib'
 import { BIP32Factory } from 'bip32'
 import { Buffer } from 'buffer'
+import {
+  MIXED_DEPTH_DESCRIPTOR,
+  USER_ORIGIN_NODE,
+  USER_ORIGIN_PATH,
+  USER_MASTER,
+  USER_XPUB,
+  COSIGNER_ORIGIN_NODE,
+  PLATFORM_ORIGIN_NODE,
+  userChildPubkey,
+} from './__fixtures__/deep-paths'
 
 const bip32 = BIP32Factory(ecc)
 const NET = bitcoin.networks.testnet
@@ -201,5 +211,74 @@ describe('xprv/xpub equivalence', () => {
     expect(p.keys[0]!.isPrivate).toBe(true)
     const derived = deriveMultisigAddress(p, 0, 'testnet')
     expect(derived.address).toMatch(/^tb1q/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Address derivation at the depth production uses
+//
+// The descriptor mixes a 6 level user origin with a 4 level platform origin,
+// so the addresses come from an 8 level and a 6 level total path in the same
+// script. deriveMultisigAddress must not care about either depth.
+// ---------------------------------------------------------------------------
+
+describe('deriveMultisigAddress at production depth', () => {
+  const mixed = parseDescriptor(MIXED_DEPTH_DESCRIPTOR)
+
+  /** The address computed straight from the fixture nodes, not from the descriptor. */
+  function expectedAddress(chain: number, index: number): string {
+    const pubkeys = [
+      USER_ORIGIN_NODE,
+      COSIGNER_ORIGIN_NODE,
+      PLATFORM_ORIGIN_NODE,
+    ]
+      .map((node) => Buffer.from(node.derive(chain).derive(index).publicKey))
+      .sort(Buffer.compare)
+    const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys, network: NET })
+    const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms, network: NET })
+    return p2wsh.address!
+  }
+
+  it('derives the address the fixture keys independently produce', () => {
+    expect(deriveMultisigAddress(mixed, 0, 'testnet').address).toBe(
+      expectedAddress(0, 0),
+    )
+  })
+
+  it('derives a later receive index correctly', () => {
+    expect(deriveMultisigAddress(mixed, 9, 'testnet').address).toBe(
+      expectedAddress(0, 9),
+    )
+  })
+
+  it('derives the change branch correctly', () => {
+    expect(deriveMultisigAddress(mixed, 3, 'testnet', 1).address).toBe(
+      expectedAddress(1, 3),
+    )
+  })
+
+  it('includes the user key in the witness script at 8 total levels', () => {
+    const derived = deriveMultisigAddress(mixed, 4, 'testnet')
+    const userPub = userChildPubkey(0, 4)
+    expect(
+      derived.publicKeys.some((k) => Buffer.compare(k, userPub) === 0),
+    ).toBe(true)
+  })
+
+  it('a sibling branch of the user key produces a different address', () => {
+    // The whole point of the per contract branch: one level off is a
+    // different wallet, and it still looks perfectly valid.
+    const otherBranch = MIXED_DEPTH_DESCRIPTOR.replace(
+      `${USER_ORIGIN_PATH.replace(/'/g, 'h')}]${USER_XPUB}`,
+      `${USER_ORIGIN_PATH.replace(/'/g, 'h')}]${USER_MASTER.derivePath(
+        "m/48'/1'/0'/2'/0/8",
+      )
+        .neutered()
+        .toBase58()}`,
+    )
+    expect(otherBranch).not.toBe(MIXED_DEPTH_DESCRIPTOR)
+    expect(
+      deriveMultisigAddress(parseDescriptor(otherBranch), 0, 'testnet').address,
+    ).not.toBe(expectedAddress(0, 0))
   })
 })

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { parseRecoveryFile } from './recovery-file'
+import { parseRecoveryFile, isPasswordKeySource, describeKeySource } from './recovery-file'
 import { RecoveryError } from './errors'
 
 // ---------------------------------------------------------------------------
@@ -390,9 +390,9 @@ describe('parseRecoveryFile — invalid enum values', () => {
     }
   })
 
-  it('rejects invalid keySource "TREZOR" with MALFORMED_FILE', () => {
+  it('rejects an empty keySource with MALFORMED_FILE', () => {
     const obj = JSON.parse(VALID_PASSWORD_FIXTURE)
-    obj.userKey.keySource = 'TREZOR'
+    obj.userKey.keySource = '   '
     try {
       parseRecoveryFile(JSON.stringify(obj))
       expect.fail('should have thrown')
@@ -401,15 +401,88 @@ describe('parseRecoveryFile — invalid enum values', () => {
     }
   })
 
-  it('rejects invalid keySource "password" (lowercase) with MALFORMED_FILE', () => {
+  it('rejects a non-string keySource with MALFORMED_FILE', () => {
     const obj = JSON.parse(VALID_PASSWORD_FIXTURE)
-    obj.userKey.keySource = 'password'
+    obj.userKey.keySource = 7
     try {
       parseRecoveryFile(JSON.stringify(obj))
       expect.fail('should have thrown')
     } catch (e) {
       expect((e as RecoveryError).code).toBe('MALFORMED_FILE')
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// keySource is open ended: the backend records the user's real wallet type and
+// new ones appear over time, so an unrecognised value must still open.
+// ---------------------------------------------------------------------------
+
+describe('parseRecoveryFile — keySource values', () => {
+  for (const keySource of ['COLD_CARD', 'LEDGER', 'TREZOR', 'OTHER']) {
+    it(`accepts keySource "${keySource}" and preserves it`, () => {
+      const obj = JSON.parse(VALID_HARDWARE_FIXTURE)
+      obj.userKey.keySource = keySource
+      const file = parseRecoveryFile(JSON.stringify(obj))
+      expect(file.userKey.keySource).toBe(keySource)
+    })
+  }
+
+  it('accepts a wallet type this tool has never heard of', () => {
+    const obj = JSON.parse(VALID_HARDWARE_FIXTURE)
+    obj.userKey.keySource = 'BITBOX02'
+    const file = parseRecoveryFile(JSON.stringify(obj))
+    expect(file.userKey.keySource).toBe('BITBOX02')
+  })
+
+  it('does not silently drop keySource from the reconstructed object', () => {
+    const obj = JSON.parse(VALID_HARDWARE_FIXTURE)
+    obj.userKey.keySource = 'LEDGER'
+    const file = parseRecoveryFile(JSON.stringify(obj))
+    expect(Object.keys(file.userKey)).toContain('keySource')
+    expect(file.userKey.keySource).not.toBeUndefined()
+  })
+})
+
+describe('isPasswordKeySource', () => {
+  it('is true only for exactly "PASSWORD"', () => {
+    expect(isPasswordKeySource('PASSWORD')).toBe(true)
+  })
+
+  for (const keySource of ['COLD_CARD', 'LEDGER', 'TREZOR', 'OTHER', 'BITBOX02', 'password']) {
+    it(`is false for "${keySource}" so it takes the hardware path`, () => {
+      expect(isPasswordKeySource(keySource)).toBe(false)
+    })
+  }
+})
+
+describe('describeKeySource', () => {
+  it('names the password case', () => {
+    expect(describeKeySource('PASSWORD')).toBe('Password')
+  })
+
+  it('names Coldcard rather than calling every device a Coldcard', () => {
+    expect(describeKeySource('COLD_CARD')).toBe('Coldcard hardware wallet')
+  })
+
+  it('names Ledger', () => {
+    expect(describeKeySource('LEDGER')).toBe('Ledger hardware wallet')
+  })
+
+  it('names Trezor', () => {
+    expect(describeKeySource('TREZOR')).toBe('Trezor hardware wallet')
+  })
+
+  it('falls back to generic wording for OTHER', () => {
+    expect(describeKeySource('OTHER')).toBe('Hardware wallet')
+  })
+
+  it('falls back to generic wording for a type invented later', () => {
+    expect(describeKeySource('BITBOX02')).toBe('Hardware wallet')
+  })
+
+  it('never returns a raw code the user cannot act on', () => {
+    expect(describeKeySource('SOME_FUTURE_DEVICE')).not.toContain('_')
   })
 })
 

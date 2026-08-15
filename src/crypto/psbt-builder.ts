@@ -152,13 +152,21 @@ export function buildPsbt(params: {
       const childPub = node.derive(chain).derive(addressInfo.index)
       const fpBuf = Buffer.from(key.fingerprint, 'hex')
 
-      // Normalize path: convert h to '
-      const normalizedPath = key.originPath.replace(/h\b/g, "'")
+      // Normalize path: convert h and H to '. The match is case-insensitive
+      // because a missed marker is not an error anywhere downstream: PSBT
+      // encoding reads "48H" as the unhardened child 48, so the path written
+      // into the PSBT would name a different key than the descriptor does.
+      const normalizedPath = key.originPath.replace(/h\b/gi, "'")
+
+      // A key with no origin path at all ([FP]xpub) must still produce a
+      // well formed path. `m//0/0` is not one: the empty component decodes
+      // as index 0, silently adding a level the descriptor never had.
+      const originPrefix = normalizedPath === '' ? 'm' : `m/${normalizedPath}`
 
       return {
         masterFingerprint: fpBuf,
         pubkey: Buffer.from(childPub.publicKey),
-        path: `m/${normalizedPath}/${chain}/${addressInfo.index}`,
+        path: `${originPrefix}/${chain}/${addressInfo.index}`,
       }
     })
 

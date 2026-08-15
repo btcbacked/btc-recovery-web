@@ -2,7 +2,44 @@ import { RecoveryError } from './errors'
 
 export type Network = 'mainnet' | 'testnet' | 'regtest' | 'signet'
 export type Role = 'lender' | 'borrower'
-export type KeySource = 'PASSWORD' | 'COLD_CARD'
+
+/**
+ * How the user's key is protected.
+ *
+ * 'PASSWORD' is the only value this tool can derive a key for. Every other
+ * value means the private key lives on a physical device, so the browser can
+ * never sign. New device types are added over time (COLD_CARD, LEDGER,
+ * TREZOR, OTHER, and whatever comes next), so this is a plain string: an
+ * unrecognised value must still open, not be rejected.
+ */
+export type KeySource = string
+
+const PASSWORD_KEY_SOURCE = 'PASSWORD'
+
+/**
+ * True only for keys this tool can rebuild from a password. Anything else,
+ * known or not, is treated as a device-held key and takes the hardware path.
+ */
+export function isPasswordKeySource(keySource: string): boolean {
+  return keySource === PASSWORD_KEY_SOURCE
+}
+
+const KEY_SOURCE_LABELS: Record<string, string> = {
+  PASSWORD: 'Password',
+  COLD_CARD: 'Coldcard hardware wallet',
+  LEDGER: 'Ledger hardware wallet',
+  TREZOR: 'Trezor hardware wallet',
+  OTHER: 'Hardware wallet',
+}
+
+/**
+ * Plain-language name for a key source, for display to the user.
+ * An unrecognised value falls back to the generic device wording rather than
+ * showing a raw code the user cannot act on.
+ */
+export function describeKeySource(keySource: string): string {
+  return KEY_SOURCE_LABELS[keySource] ?? 'Hardware wallet'
+}
 
 export type RecoveryFileContext = {
   contractId: string
@@ -112,9 +149,11 @@ export function parseRecoveryFile(jsonString: string): RecoveryFile {
       throw new RecoveryError('MALFORMED_FILE', `Missing "userKey.${field}" field.`)
     }
   }
-  const validKeySources: KeySource[] = ['PASSWORD', 'COLD_CARD']
-  if (!validKeySources.includes(key.keySource as KeySource)) {
-    throw new RecoveryError('MALFORMED_FILE', `Invalid keySource "${key.keySource}". Must be "PASSWORD" or "COLD_CARD".`)
+  // Any non-empty string is accepted. New wallet types are added over time and
+  // a file this tool has not heard of must still open, so it is only checked
+  // for being usable text.
+  if (typeof key.keySource !== 'string' || key.keySource.trim() === '') {
+    throw new RecoveryError('MALFORMED_FILE', 'The "userKey.keySource" field must be a non-empty string.')
   }
 
   // Validate optional fields have correct types if present
@@ -136,7 +175,7 @@ export function parseRecoveryFile(jsonString: string): RecoveryFile {
       totalKeys: ctx.totalKeys as number,
     },
     userKey: {
-      keySource: key.keySource as KeySource,
+      keySource: key.keySource,
       derivationProfile: key.derivationProfile as string | undefined,
       salt: key.salt as string | undefined,
       derivationPath: key.derivationPath as string,

@@ -1,16 +1,39 @@
 import { Cpu, Download } from 'lucide-react'
 import { CopyButton } from '@/components/CopyButton'
+import { EscrowSummary } from '@/components/EscrowSummary'
+import { describeKeySource } from '@/crypto'
 import type { RecoveryFile } from '@/crypto'
 
 type HardwareStepProps = {
   file: RecoveryFile
+  /** Descriptor to hand to the user, with a valid checksum attached. */
+  descriptor: string
+  escrowAddress: string
+  balance: number
+  depositCount: number
+  isLoadingBalance: boolean
+  balanceError: string | null
+  isStandardDerivation: boolean
+  onLoadBalance: () => void
   onContinue: () => void
   onBack: () => void
 }
 
-export function HardwareStep({ file, onContinue, onBack }: HardwareStepProps) {
+export function HardwareStep({
+  file,
+  descriptor,
+  escrowAddress,
+  balance,
+  depositCount,
+  isLoadingBalance,
+  balanceError,
+  isStandardDerivation,
+  onLoadBalance,
+  onContinue,
+  onBack,
+}: HardwareStepProps) {
   const handleDownload = () => {
-    const blob = new Blob([file.outputDescriptor], { type: 'text/plain' })
+    const blob = new Blob([descriptor], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -32,26 +55,39 @@ export function HardwareStep({ file, onContinue, onBack }: HardwareStepProps) {
         <h2 className="text-[var(--text-auth-heading)] font-semibold text-foreground">
           Hardware Wallet Key
         </h2>
+        <p className="mt-1 text-sm font-medium text-foreground">
+          {describeKeySource(file.userKey.keySource)}
+        </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          This recovery file uses a ColdCard hardware wallet. No password is needed because
-          the private key is stored securely on your ColdCard device — it never touches this
-          browser. Import the output descriptor below into your wallet software, then sign
-          transactions using your ColdCard.
+          There is no password to enter, because your private key stays on the device and
+          never reaches this browser. Copy the wallet configuration below into your wallet
+          app, then approve payments on your device.
         </p>
       </div>
 
-      {/* Descriptor code block — premium monospace treatment */}
+      {escrowAddress && (
+        <EscrowSummary
+          address={escrowAddress}
+          balance={balance}
+          depositCount={depositCount}
+          isLoading={isLoadingBalance}
+          error={balanceError}
+          isStandardDerivation={isStandardDerivation}
+          onLoad={onLoadBalance}
+        />
+      )}
+
       <div>
         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Output Descriptor
+          Wallet Configuration (Output Descriptor)
         </p>
         <div className="code-block">
-          <pre>{file.outputDescriptor}</pre>
+          <pre>{descriptor}</pre>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-        <CopyButton text={file.outputDescriptor} label="Copy Descriptor" />
+        <CopyButton text={descriptor} label="Copy Descriptor" />
         <button
           type="button"
           onClick={handleDownload}

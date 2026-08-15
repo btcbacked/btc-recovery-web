@@ -97,6 +97,19 @@ export function parseDescriptor(descriptor: string): ParsedDescriptor {
 }
 
 /**
+ * True when every key takes its addresses from the standard `/0/*` branch.
+ *
+ * That is the only shape `deriveMultisigAddress` reproduces: it always derives
+ * `/0/<index>` and ignores whatever child derivation the descriptor names. So
+ * for any other shape (a key pinned to a fixed child index, or a different
+ * branch) the address and balance this tool shows do not describe the wallet
+ * in the file, and must not be presented as something to check against.
+ */
+export function usesStandardChildDerivation(parsed: ParsedDescriptor): boolean {
+  return parsed.keys.every((key) => key.childDerivation === '0/*')
+}
+
+/**
  * Find a specific key in the parsed descriptor by its master fingerprint.
  * Case-insensitive comparison.
  */
