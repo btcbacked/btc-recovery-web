@@ -18,9 +18,24 @@
  * bip32 library (no Web Crypto), so they always run.
  */
 
-import { deriveSeed, deriveMasterKey, computeFingerprint, deriveXprv, deriveSigningKey } from './derivation'
-import { RecoveryError } from './errors'
+import {
+  deriveSeed,
+  deriveMasterKey,
+  computeFingerprint,
+  deriveXprv,
+  deriveSigningKey,
+  neuterXprv,
+  checkDerivedKeyAgainstXpub,
+} from './derivation'
+import {
+  RecoveryError,
+  KEY_MISMATCH_UNCHECKABLE,
+  KEY_MISMATCH_INCONSISTENT_FILE,
+} from './errors'
+import type { Network } from './recovery-file'
 import type { DerivationProfile } from './profiles'
+import * as ecc from '@bitcoinerlab/secp256k1'
+import { BIP32Factory } from 'bip32'
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -44,6 +59,41 @@ const FIXTURE_SALT = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
 function hasCryptoSubtle(): boolean {
   return typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.subtle !== 'undefined'
 }
+
+/** The xpub a recovery file would record for a seed derived at `path`. */
+function xpubAt(seedHex: string, path: string, network: Network): string {
+  return neuterXprv(deriveXprv(seedHex, path, network), network)
+}
+
+const bip32 = BIP32Factory(ecc)
+const TESTNET_VERSIONS = {
+  bip32: { public: 0x043587cf, private: 0x04358394 },
+  wif: 0xef,
+}
+
+/**
+ * Re-serialises an extended public key with one chain code byte flipped and
+ * the public key untouched.
+ *
+ * This is the pair that a public-key-only comparison cannot tell apart. It is
+ * a real pair, not a contrived one: the chain code is half of what a BIP32
+ * node is, every child derives from both halves, and two nodes agreeing on the
+ * public key while disagreeing on the chain code produce completely different
+ * children. So the descriptor, the addresses and the signatures would all be
+ * wrong while the file looked correct.
+ */
+function forgeSameKeyOtherChainCode(xpub: string): string {
+  const real = bip32.fromBase58(xpub, TESTNET_VERSIONS)
+  const chainCode = Uint8Array.from(real.chainCode, (byte, i) =>
+    i === 0 ? byte ^ 0x01 : byte,
+  )
+  return bip32
+    .fromPublicKey(Uint8Array.from(real.publicKey), chainCode, TESTNET_VERSIONS)
+    .toBase58()
+}
+
+// A seed for the consistency-check tests, independent of the deriveXprv block.
+const CHECK_SEED = '01'.repeat(64)
 
 // ---------------------------------------------------------------------------
 // deriveSeed
@@ -238,6 +288,34 @@ describe('deriveXprv', () => {
     const xprvH = deriveXprv(SEED_MAINNET, '48h/0h/0h/2h', 'mainnet')
     expect(xprvH).toBe(xprvApostrophe)
   })
+
+  it('refuses an uppercase H marker rather than guessing at it', () => {
+    // Fail closed, in step with isValidDerivationPath, which rejects
+    // "48H/1H/0H/2H/0/7" before a file ever reaches here.
+    //
+    // bip32 does NOT read "48H" as the unhardened child 48: the string fails
+    // its own path format check and derivePath throws. So normalising H here
+    // would be the only thing standing between an unrecognised marker and a
+    // key, and a wrong guess at what the writer meant is worse than a stop.
+    // psbt-builder.ts is the opposite case and is deliberately different: PSBT
+    // path encoding silently drops a marker it cannot parse, so there it has
+    // to be normalised before it reaches the encoder.
+    expect(() => deriveXprv(SEED_MAINNET, '48H/0H/0H/2H', 'mainnet')).toThrow()
+  })
+
+  it('handles the real 6 level origin path', () => {
+    const xprv = deriveXprv(SEED_TESTNET, "48'/1'/0'/2'/0/7", 'testnet')
+    const parent = deriveXprv(SEED_TESTNET, "48'/1'/0'/2'", 'testnet')
+
+    expect(xprv.startsWith('tprv')).toBe(true)
+    expect(xprv).not.toBe(parent)
+  })
+
+  it('a different branch at the last level is a different key', () => {
+    const branch7 = deriveXprv(SEED_TESTNET, "48'/1'/0'/2'/0/7", 'testnet')
+    const branch8 = deriveXprv(SEED_TESTNET, "48'/1'/0'/2'/0/8", 'testnet')
+    expect(branch7).not.toBe(branch8)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -258,14 +336,15 @@ describe('deriveSigningKey', () => {
 
     // Now call deriveSigningKey with a WRONG password but the CORRECT fingerprint
     try {
-      await deriveSigningKey(
-        'wrong-password',
-        FIXTURE_SALT,
-        "48'/1'/0'/2'",
-        correctFingerprint,
-        'testnet',
-        FAST_PROFILE,
-      )
+      await deriveSigningKey({
+        password: 'wrong-password',
+        saltHex: FIXTURE_SALT,
+        derivationPath: "48'/1'/0'/2'",
+        expectedFingerprint: correctFingerprint,
+        expectedXpub: xpubAt(correctSeed, "48'/1'/0'/2'", 'testnet'),
+        network: 'testnet',
+        profile: FAST_PROFILE,
+      })
       expect.fail('should have thrown FINGERPRINT_MISMATCH')
     } catch (e) {
       expect((e as RecoveryError).code).toBe('FINGERPRINT_MISMATCH')
@@ -279,14 +358,15 @@ describe('deriveSigningKey', () => {
     const correctFingerprint = computeFingerprint(correctSeed, 'testnet')
 
     try {
-      await deriveSigningKey(
-        'wrong-password',
-        FIXTURE_SALT,
-        "48'/1'/0'/2'",
-        correctFingerprint,
-        'testnet',
-        FAST_PROFILE,
-      )
+      await deriveSigningKey({
+        password: 'wrong-password',
+        saltHex: FIXTURE_SALT,
+        derivationPath: "48'/1'/0'/2'",
+        expectedFingerprint: correctFingerprint,
+        expectedXpub: xpubAt(correctSeed, "48'/1'/0'/2'", 'testnet'),
+        network: 'testnet',
+        profile: FAST_PROFILE,
+      })
       expect.fail('should have thrown')
     } catch (e) {
       expect((e as RecoveryError).userMessage.toLowerCase()).toContain('password')
@@ -300,14 +380,15 @@ describe('deriveSigningKey', () => {
     const seed = await deriveSeed('my-test-password', FIXTURE_SALT, FAST_PROFILE)
     const fingerprint = computeFingerprint(seed, 'mainnet')
 
-    const xprv = await deriveSigningKey(
-      'my-test-password',
-      FIXTURE_SALT,
-      "48'/0'/0'/2'",
-      fingerprint,
-      'mainnet',
-      FAST_PROFILE,
-    )
+    const xprv = await deriveSigningKey({
+      password: 'my-test-password',
+      saltHex: FIXTURE_SALT,
+      derivationPath: "48'/0'/0'/2'",
+      expectedFingerprint: fingerprint,
+      expectedXpub: xpubAt(seed, "48'/0'/0'/2'", 'mainnet'),
+      network: 'mainnet',
+      profile: FAST_PROFILE,
+    })
 
     expect(xprv.startsWith('xprv')).toBe(true)
   })
@@ -318,14 +399,15 @@ describe('deriveSigningKey', () => {
     const seed = await deriveSeed('testnet-password', FIXTURE_SALT, FAST_PROFILE)
     const fingerprint = computeFingerprint(seed, 'testnet')
 
-    const tprv = await deriveSigningKey(
-      'testnet-password',
-      FIXTURE_SALT,
-      "48'/1'/0'/2'",
-      fingerprint,
-      'testnet',
-      FAST_PROFILE,
-    )
+    const tprv = await deriveSigningKey({
+      password: 'testnet-password',
+      saltHex: FIXTURE_SALT,
+      derivationPath: "48'/1'/0'/2'",
+      expectedFingerprint: fingerprint,
+      expectedXpub: xpubAt(seed, "48'/1'/0'/2'", 'testnet'),
+      network: 'testnet',
+      profile: FAST_PROFILE,
+    })
 
     expect(tprv.startsWith('tprv')).toBe(true)
   })
@@ -339,14 +421,15 @@ describe('deriveSigningKey', () => {
     // Pass lowercase version of the fingerprint — should still succeed
     const lowercaseFingerprint = fingerprint.toLowerCase()
 
-    const xprv = await deriveSigningKey(
-      'case-test-password',
-      FIXTURE_SALT,
-      "48'/0'/0'/2'",
-      lowercaseFingerprint,
-      'mainnet',
-      FAST_PROFILE,
-    )
+    const xprv = await deriveSigningKey({
+      password: 'case-test-password',
+      saltHex: FIXTURE_SALT,
+      derivationPath: "48'/0'/0'/2'",
+      expectedFingerprint: lowercaseFingerprint,
+      expectedXpub: xpubAt(seed, "48'/0'/0'/2'", 'mainnet'),
+      network: 'mainnet',
+      profile: FAST_PROFILE,
+    })
 
     expect(xprv.startsWith('xprv')).toBe(true)
   })
@@ -357,25 +440,311 @@ describe('deriveSigningKey', () => {
     const seed = await deriveSeed('deterministic-password', FIXTURE_SALT, FAST_PROFILE)
     const fingerprint = computeFingerprint(seed, 'mainnet')
 
-    const xprv1 = await deriveSigningKey(
-      'deterministic-password',
-      FIXTURE_SALT,
-      "48'/0'/0'/2'",
-      fingerprint,
-      'mainnet',
-      FAST_PROFILE,
-    )
+    const request = {
+      password: 'deterministic-password',
+      saltHex: FIXTURE_SALT,
+      derivationPath: "48'/0'/0'/2'",
+      expectedFingerprint: fingerprint,
+      expectedXpub: xpubAt(seed, "48'/0'/0'/2'", 'mainnet'),
+      network: 'mainnet',
+      profile: FAST_PROFILE,
+    } as const
 
-    const xprv2 = await deriveSigningKey(
-      'deterministic-password',
-      FIXTURE_SALT,
-      "48'/0'/0'/2'",
-      fingerprint,
-      'mainnet',
-      FAST_PROFILE,
-    )
+    const xprv1 = await deriveSigningKey(request)
+    const xprv2 = await deriveSigningKey(request)
 
     expect(xprv1).toBe(xprv2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The key consistency check, at the real 6 level origin depth
+//
+// The master fingerprint proves the password rebuilt the right wallet. It is a
+// depth 0 value, so it says nothing about the path. With a per contract branch
+// in the path, a stale path produces a valid key, a valid descriptor, a
+// plausible address and the WRONG key. The recorded xpub is the only value in
+// the file that can catch that.
+// ---------------------------------------------------------------------------
+
+describe('deriveSigningKey key consistency check', () => {
+  const PASSWORD = 'branch-path-password'
+  const REAL_PATH = "48'/1'/0'/2'/0/7"
+  const STALE_BRANCH_PATH = "48'/1'/0'/2'/0/6"
+  const LEGACY_PATH = "48'/1'/0'/2'"
+
+  async function seedAndFingerprint() {
+    const seed = await deriveSeed(PASSWORD, FIXTURE_SALT, FAST_PROFILE)
+    return { seed, fingerprint: computeFingerprint(seed, 'testnet') }
+  }
+
+  function callWith(fingerprint: string, path: string, xpub: string) {
+    return deriveSigningKey({
+      password: PASSWORD,
+      saltHex: FIXTURE_SALT,
+      derivationPath: path,
+      expectedFingerprint: fingerprint,
+      expectedXpub: xpub,
+      network: 'testnet',
+      profile: FAST_PROFILE,
+    })
+  }
+
+  it('accepts a file whose 6 level path and xpub agree', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    const tprv = await callWith(
+      fingerprint,
+      REAL_PATH,
+      xpubAt(seed, REAL_PATH, 'testnet'),
+    )
+
+    expect(tprv).toBe(deriveXprv(seed, REAL_PATH, 'testnet'))
+  })
+
+  it('rejects a path that is one branch off the recorded xpub', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(
+        fingerprint,
+        STALE_BRANCH_PATH,
+        xpubAt(seed, REAL_PATH, 'testnet'),
+      )
+      expect.fail('a wrong branch must not produce a signing key')
+    } catch (e) {
+      expect((e as RecoveryError).code).toBe('KEY_MISMATCH')
+    }
+  })
+
+  it('rejects the old 4 level path against a 6 level xpub', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(
+        fingerprint,
+        LEGACY_PATH,
+        xpubAt(seed, REAL_PATH, 'testnet'),
+      )
+      expect.fail('a stale 4 level path must not produce a signing key')
+    } catch (e) {
+      expect((e as RecoveryError).code).toBe('KEY_MISMATCH')
+    }
+  })
+
+  it('rejects a 6 level path against the old 4 level xpub', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(
+        fingerprint,
+        REAL_PATH,
+        xpubAt(seed, LEGACY_PATH, 'testnet'),
+      )
+      expect.fail('a stale recorded xpub must not be accepted')
+    } catch (e) {
+      expect((e as RecoveryError).code).toBe('KEY_MISMATCH')
+    }
+  })
+
+  it('says what is wrong in plain language, not a generic failure', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(
+        fingerprint,
+        STALE_BRANCH_PATH,
+        xpubAt(seed, REAL_PATH, 'testnet'),
+      )
+      expect.fail('should have thrown')
+    } catch (e) {
+      const err = e as RecoveryError
+      expect(err.userMessage).toContain('recovery file')
+      expect(err.userMessage.toLowerCase()).toContain('does not match')
+      expect(err.userMessage).not.toMatch(/failed to sign/i)
+      // The path that was used and the key it produced belong in the detail,
+      // where a support conversation can use them.
+      expect(err.detail).toContain(STALE_BRANCH_PATH)
+    }
+  })
+
+  it('tells the customer the password was not the problem', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(
+        fingerprint,
+        STALE_BRANCH_PATH,
+        xpubAt(seed, REAL_PATH, 'testnet'),
+      )
+      expect.fail('should have thrown')
+    } catch (e) {
+      expect((e as RecoveryError).userMessage.toLowerCase()).toContain(
+        'password is correct',
+      )
+    }
+  })
+
+  it('rejects a file whose recorded xpub cannot be read at all', async () => {
+    if (!hasCryptoSubtle()) return
+    const { fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(fingerprint, REAL_PATH, 'not-an-xpub')
+      expect.fail('an unreadable xpub must not pass the check')
+    } catch (e) {
+      expect((e as RecoveryError).code).toBe('KEY_MISMATCH')
+      expect((e as RecoveryError).userMessage).toContain('cannot be read')
+    }
+  })
+
+  // The two messages below used to be literals at their throw sites, so the
+  // wording a customer actually reads had no coverage while the unused entry
+  // in ERROR_MESSAGES did. Pinning them to the exported constants keeps the
+  // reviewed copy and the shipped copy the same string.
+
+  it('ships the reviewed wording when the file disagrees with itself', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(
+        fingerprint,
+        STALE_BRANCH_PATH,
+        xpubAt(seed, REAL_PATH, 'testnet'),
+      )
+      expect.fail('should have thrown')
+    } catch (e) {
+      expect((e as RecoveryError).userMessage).toBe(KEY_MISMATCH_INCONSISTENT_FILE)
+    }
+  })
+
+  it('ships the reviewed wording when the recorded key cannot be read', async () => {
+    if (!hasCryptoSubtle()) return
+    const { fingerprint } = await seedAndFingerprint()
+
+    try {
+      await callWith(fingerprint, REAL_PATH, 'not-an-xpub')
+      expect.fail('should have thrown')
+    } catch (e) {
+      expect((e as RecoveryError).userMessage).toBe(KEY_MISMATCH_UNCHECKABLE)
+    }
+  })
+
+  it('accepts the same key recorded with the other network version bytes', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    // Same key material, serialized with mainnet version bytes. Version bytes
+    // take no part in derivation, so this is the same key and must not be
+    // reported as a mismatch.
+    const mainnetSerialization = xpubAt(seed, REAL_PATH, 'mainnet')
+    expect(mainnetSerialization.startsWith('xpub')).toBe(true)
+
+    const tprv = await callWith(fingerprint, REAL_PATH, mainnetSerialization)
+    expect(tprv.startsWith('tprv')).toBe(true)
+  })
+
+  it('checks the fingerprint before the key, so a wrong password says so', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    try {
+      await deriveSigningKey({
+        password: 'a-completely-different-password',
+        saltHex: FIXTURE_SALT,
+        derivationPath: STALE_BRANCH_PATH,
+        expectedFingerprint: fingerprint,
+        expectedXpub: xpubAt(seed, REAL_PATH, 'testnet'),
+        network: 'testnet',
+        profile: FAST_PROFILE,
+      })
+      expect.fail('should have thrown')
+    } catch (e) {
+      expect((e as RecoveryError).code).toBe('FINGERPRINT_MISMATCH')
+    }
+  })
+
+  it('accepts a path written with h markers when the xpub agrees', async () => {
+    if (!hasCryptoSubtle()) return
+    const { seed, fingerprint } = await seedAndFingerprint()
+
+    const tprv = await callWith(
+      fingerprint,
+      '48h/1h/0h/2h/0/7',
+      xpubAt(seed, REAL_PATH, 'testnet'),
+    )
+
+    expect(tprv).toBe(deriveXprv(seed, REAL_PATH, 'testnet'))
+  })
+})
+
+// ---------------------------------------------------------------------------
+// checkDerivedKeyAgainstXpub
+// ---------------------------------------------------------------------------
+
+describe('checkDerivedKeyAgainstXpub', () => {
+  const XPRV = deriveXprv(CHECK_SEED, "48'/1'/0'/2'/0/7", 'testnet')
+
+  it('matches the xpub of the same key', () => {
+    expect(
+      checkDerivedKeyAgainstXpub(
+        XPRV,
+        neuterXprv(XPRV, 'testnet'),
+        'testnet',
+      ),
+    ).toBe('match')
+  })
+
+  it('matches across version bytes, since they are not part of the key', () => {
+    const sameKeyMainnetBytes = xpubAt(
+      CHECK_SEED,
+      "48'/1'/0'/2'/0/7",
+      'mainnet',
+    )
+    expect(
+      checkDerivedKeyAgainstXpub(XPRV, sameKeyMainnetBytes, 'testnet'),
+    ).toBe('match')
+  })
+
+  it('reports a mismatch for the sibling branch', () => {
+    const sibling = xpubAt(CHECK_SEED, "48'/1'/0'/2'/0/8", 'testnet')
+    expect(checkDerivedKeyAgainstXpub(XPRV, sibling, 'testnet')).toBe('mismatch')
+  })
+
+  it('reports a mismatch for the parent, which shares no chain code', () => {
+    const parent = xpubAt(CHECK_SEED, "48'/1'/0'/2'/0", 'testnet')
+    expect(checkDerivedKeyAgainstXpub(XPRV, parent, 'testnet')).toBe('mismatch')
+  })
+
+  it('reports a mismatch when only the chain code differs', () => {
+    const real = neuterXprv(XPRV, 'testnet')
+    const forged = forgeSameKeyOtherChainCode(real)
+
+    // Pin what makes this case worth a test: the public keys are identical, so
+    // the chain code is the ONLY thing that separates these two nodes.
+    expect(
+      Array.from(bip32.fromBase58(forged, TESTNET_VERSIONS).publicKey),
+    ).toEqual(Array.from(bip32.fromBase58(real, TESTNET_VERSIONS).publicKey))
+    expect(forged).not.toBe(real)
+
+    expect(checkDerivedKeyAgainstXpub(XPRV, forged, 'testnet')).toBe('mismatch')
+  })
+
+  it('reports unreadable for something that is not an extended key', () => {
+    expect(checkDerivedKeyAgainstXpub(XPRV, 'nonsense', 'testnet')).toBe(
+      'unreadable',
+    )
+  })
+
+  it('reports unreadable for an empty string', () => {
+    expect(checkDerivedKeyAgainstXpub(XPRV, '', 'testnet')).toBe('unreadable')
   })
 })
 

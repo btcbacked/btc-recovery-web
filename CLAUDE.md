@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BTCBacked Key Recovery is a fully client-side React application that allows borrowers and lenders to recover their Bitcoin signing keys from a BTCBacked recovery file. All cryptographic operations (BIP39 seed derivation, BIP32 key derivation, descriptor reconstruction) run in the browser using WebCrypto and pure JS libraries. No data is ever sent to a server.
+BTCBacked Key Recovery is a fully client-side React application that allows borrowers and lenders to recover their Bitcoin signing keys from a BTCBacked recovery file. All cryptographic operations (PBKDF2 seed derivation, BIP32 key derivation, descriptor reconstruction) run in the browser using WebCrypto and pure JS libraries. No data is ever sent to a server.
 
 ## Common Commands
 
@@ -42,7 +42,7 @@ npm run lint              # placeholder (ESLint not yet configured)
 src/
   main.tsx              # Entry point — polyfills Buffer on globalThis, mounts React
   App.tsx               # Root: AppLayout + RecoveryWizard + Toaster
-  styles.css            # Tailwind entry, CSS custom properties (design tokens), dark mode
+  styles.css            # Tailwind entry, CSS custom properties (design tokens)
   crypto/               # Pure TypeScript crypto modules (no React)
     descriptor-parser.ts  # Parse output descriptors
     address.ts            # Derive addresses from descriptors
@@ -54,47 +54,51 @@ src/
     networks.ts           # Bitcoin network config (mainnet/testnet/signet/regtest)
     bitcoin-lib.ts        # bitcoinjs-lib & ecpair wrapper
     recovery-file.ts      # RecoveryFile type + parser/validator
-    derivation.ts         # BIP39 seed → BIP32 master key → signing key derivation
+    derivation.ts         # PBKDF2 seed → BIP32 master key → signing key derivation
     descriptor.ts         # Output descriptor manipulation and checksum
     profiles.ts           # Named derivation profiles (maps profile id → algo + path)
     validation.ts         # Fingerprint, hex, derivation path validators
     errors.ts             # RecoveryError class + typed error codes
     index.ts              # Barrel export for all crypto modules
+    __fixtures__/
+      deep-paths.ts       # Keys and a descriptor at the deeper 6/8 level shape
   hooks/
     useRecoveryWizard.ts    # Wizard state machine (step, recoveryFile, descriptor, errors)
     useDerivation.ts        # Async key derivation with loading/error state
     useClipboard.ts         # Clipboard write with transient success state
-    useTheme.ts             # Dark/light theme toggle, persisted to localStorage
     useNetworkConfig.ts     # Network selection and Mempool.space config
     useWalletState.ts       # Recovered keys and transaction state
     usePsbtWorkflow.ts      # PSBT creation, signing, and broadcasting
   lib/
     utils.ts              # cn() helper (clsx + tailwind-merge)
   components/
-    AppLayout.tsx         # Page chrome: header (logo, theme toggle), main, footer
+    AppLayout.tsx         # Page chrome: header (logo, resets the wizard), main, footer
     RecoveryWizard.tsx    # Orchestrator: reads wizard state, renders the active step
     StepIndicator.tsx     # Progress bar showing current wizard position
     FileDropZone.tsx      # Drag-and-drop + file picker for the recovery JSON
     CopyButton.tsx        # Icon button that copies text to clipboard
+    EscrowSummary.tsx     # Escrow address and balance panel shared by several steps
     NetworkBadge.tsx      # Pill showing mainnet/testnet/signet/regtest
     SecurityBadge.tsx     # "All operations local" trust indicator
     steps/
       UploadStep.tsx          # Step 1: drop or select recovery file
       FileInfoStep.tsx        # Step 2: display parsed file metadata, confirm
       PasswordStep.tsx        # Step 3a: enter passphrase (PASSWORD key source)
-      HardwareStep.tsx        # Step 3b: instructions for ColdCard (COLD_CARD key source)
+      HardwareStep.tsx        # Step 3b: any device-held key. The copy is generic and
+                              #   names the wallet from keySource, so it serves
+                              #   COLD_CARD, LEDGER, TREZOR, OTHER and unknown values
       DerivingStep.tsx        # Step 4: async derivation in progress
       ResultStep.tsx          # Step 5: show recovered xprv + descriptor
       ActionChoiceStep.tsx    # Step 6a: choose Path A or Path B
       WalletViewStep.tsx      # Path A, Step 6b: view addresses and balances
-      BuildTxStep.tsx         # Path A, Step 6c: create PSBT transaction
+      BuildTransactionStep.tsx # Path A, Step 6c: create PSBT transaction
       ReviewSignStep.tsx      # Path A, Step 6d: review and sign transaction
       ExportPsbtStep.tsx      # Path A, Step 6e: export signed PSBT
       ImportPsbtStep.tsx      # Path B, Step 6b: import PSBT from file
       ReviewPsbtStep.tsx      # Path B, Step 6c: review co-sign transaction
       SignFinalizeStep.tsx    # Path B, Step 6d: sign and finalize PSBT
       BroadcastStep.tsx       # Path B, Step 6e: broadcast to blockchain
-      GuideStep.tsx           # External wallet import guide
+      WalletGuideStep.tsx     # External wallet import guide
 ```
 
 ### Wizard Flow
@@ -109,13 +113,13 @@ upload → info → password | hardware → deriving → result → action-choic
                                                                   └─ guide (external wallet import)
 ```
 
-- The step after `info` branches on `userKey.keySource`: `PASSWORD` → `PasswordStep`, `COLD_CARD` → `HardwareStep`.
-- `DerivingStep` calls `useDerivation` which runs BIP39/BIP32 derivation asynchronously, then transitions automatically to `result`.
+- The step after `info` branches on `userKey.keySource`: `PASSWORD` → `PasswordStep`, anything else → `HardwareStep`. The list of device types is open on purpose (`COLD_CARD`, `LEDGER`, `TREZOR`, `OTHER`, and values added later), so an unrecognised source must still open the file.
+- `DerivingStep` calls `useDerivation` which runs PBKDF2 and BIP32 derivation asynchronously, then transitions automatically to `result`.
 - `ActionChoiceStep` presents three options:
   - **Path A**: Create and broadcast your own transactions (single-sig or broadcasting from a multisig escrow).
   - **Path B**: Co-sign and broadcast transactions initiated by other parties.
   - **Guide**: Import recovered keys into external wallets (Sparrow, Specter, Bitcoin Core).
-- **Path A** (`WalletViewStep` → `BuildTxStep` → `ReviewSignStep` → `ExportPsbtStep`): Derive addresses, fetch UTXOs, build and sign transactions.
+- **Path A** (`WalletViewStep` → `BuildTransactionStep` → `ReviewSignStep` → `ExportPsbtStep`): Derive addresses, fetch UTXOs, build and sign transactions.
 - **Path B** (`ImportPsbtStep` → `ReviewPsbtStep` → `SignFinalizeStep` → `BroadcastStep`): Upload co-sign PSBTs, add your signature, and broadcast.
 
 ### Crypto Data Flow
@@ -128,11 +132,45 @@ Recovery JSON file
             ├─ PASSWORD: passphrase + salt → deriveSeed() → PBKDF2 → Uint8Array
             │                              → deriveMasterKey() → BIP32 root
             │                              → deriveXprv() → BIP32 child at derivationPath
+            │                              → checkDerivedKeyAgainstXpub() → must equal userKey.xpub
             │                              → deriveSigningKey() → signing keypair
-            └─ COLD_CARD: user provides xprv directly (no server round-trip)
+            └─ any device key: nothing to derive. The user gets the descriptor and
+               signs on the device, so this branch never sees a private key.
   └─ replaceKeyByFingerprint()    → reconstructed output descriptor with user's xpub
   └─ descriptorChecksum()         → appended checksum (Bitcoin descriptor spec)
 ```
+
+### One account, forever: what the paths mean
+
+A customer registers **one** extended public key with BTCBacked, once, and every contract they ever
+take part in is built from that same account on its own branch. There is no per contract key export.
+
+`userKey.derivationPath` has **two valid shapes**, and both must recover:
+
+- Account (BIP-48): `48'/coin'/0'/2'`, **4 levels**. This is what the shipped backend writes today,
+  so it is the shape in every recovery file currently in a customer's hands.
+- Per contract branch of that account: `48'/1'/0'/2'/0/BRANCH`, **6 levels**. This shape arrives with
+  backend PR #771, which is **not merged**. Do not describe it as the current format.
+- Address under either origin, which is what a PSBT path holds: the origin plus `/chain/index`, so
+  **6 or 8 levels**
+- The platform key is a BIP-88 key at **4 levels**, so a real descriptor can mix depths in one `sortedmulti`
+
+Nothing in the crypto modules may assume a depth, and that is what makes one tool serve both shapes.
+`psbt-signer.ts` takes the last two path components positionally, `psbt-builder.ts` appends exactly
+`/{chain}/{index}` to whatever origin the descriptor names, and `address.ts` derives
+`/{chain}/{index}` from each key in the descriptor. `__fixtures__/deep-paths.ts` holds a descriptor
+at the deeper mixed depths, and the tests in `psbt-signer`, `psbt-builder`, `address`, `descriptor`
+and `descriptor-parser` exercise it. Do not add a fixture that is 4 levels on every leg and call it
+representative, and do not delete the 4 level coverage either: both shapes are live.
+
+**Why `derivationPath` is checked against `userKey.xpub`.** The master fingerprint is a depth 0 value,
+identical for every contract this customer has, so it proves the password rebuilt the right wallet and
+nothing about the path. A stale or wrong path still yields a valid key, a valid descriptor and a
+plausible address, and the first sign of trouble would be an empty balance followed by a generic
+signing failure. `deriveSigningKey` therefore rebuilds the key, neuters it, compares it with
+`userKey.xpub` and throws `KEY_MISMATCH` when they disagree. The comparison is on the public key and
+chain code, not the base58 string, so version bytes alone never read as a different key. The Rust CLI
+in `key-recovery/` carries the same check, and the two must stay aligned.
 
 #### PSBT Data Flow (Path A & B)
 ```
@@ -172,4 +210,4 @@ Output Descriptor
 - Named exports for all components and hooks (no default exports)
 - Crypto modules are pure functions — no React imports, no side effects
 - CSS via Tailwind utility classes; custom design tokens as CSS variables in `styles.css`
-- Dark mode via `.dark` class on `<html>` (toggled by `useTheme`)
+- There is no theme toggle and no dark palette. The design tokens in `styles.css` define one light theme.

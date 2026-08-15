@@ -540,3 +540,47 @@ describe('validate', () => {
     })
   })
 })
+
+// ---------------------------------------------------------------------------
+// Derivation paths at the depth production uses
+// ---------------------------------------------------------------------------
+
+describe('isValidDerivationPath at production depth', () => {
+  it("accepts the 6 level origin 48'/1'/0'/2'/0/7", () => {
+    expect(isValidDerivationPath("48'/1'/0'/2'/0/7")).toBe(true)
+  })
+
+  it('accepts the same path written with h markers', () => {
+    expect(isValidDerivationPath('48h/1h/0h/2h/0/7')).toBe(true)
+  })
+
+  it('accepts the m/ prefixed form', () => {
+    expect(isValidDerivationPath("m/48'/1'/0'/2'/0/7")).toBe(true)
+  })
+
+  it('accepts the full 8 level signing path', () => {
+    expect(isValidDerivationPath("48'/1'/0'/2'/0/7/0/5")).toBe(true)
+  })
+
+  it('accepts the 4 level BIP-88 platform path', () => {
+    expect(isValidDerivationPath("88'/1'/0'/0'")).toBe(true)
+  })
+
+  it('rejects a branch component of 2^31 or more, which bip32 would mask', () => {
+    // bip32 accepts any uint32 index and derives 2147483648 as the HARDENED
+    // child 0, so an unrejected component here would silently derive a
+    // different key. Rejecting it is the only safe answer.
+    expect(isValidDerivationPath("48'/1'/0'/2'/0/2147483648")).toBe(false)
+    expect(isValidDerivationPath("48'/1'/0'/2'/0/4294967295")).toBe(false)
+  })
+
+  it('accepts the largest legal branch component', () => {
+    expect(isValidDerivationPath("48'/1'/0'/2'/0/2147483647")).toBe(true)
+  })
+
+  it('rejects an uppercase H marker rather than guessing at it', () => {
+    // Fail closed: the servers write h, and a marker this tool does not
+    // recognise would otherwise derive an unhardened level.
+    expect(isValidDerivationPath("48H/1H/0H/2H/0/7")).toBe(false)
+  })
+})

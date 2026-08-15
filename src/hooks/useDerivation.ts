@@ -1,31 +1,34 @@
 import { useState, useCallback } from 'react'
-import { deriveSigningKey, replaceKeyByFingerprint, getProfile, RecoveryError } from '@/crypto'
+import { deriveSigningKey, replaceKeyByFingerprint, getProfile, isPasswordKeySource, RecoveryError, ERROR_MESSAGES } from '@/crypto'
 import type { RecoveryFile } from '@/crypto'
 
-type DerivationState = {
-  isDeriving: boolean
-  error: string | null
-}
+/**
+ * The outcome of one derivation attempt.
+ *
+ * It is returned rather than published as hook state on purpose. The caller
+ * runs inside a callback captured on an earlier render, so reading the error
+ * back out of state gave it the value from before the attempt: null on the
+ * first failure. That turned a "this file disagrees with itself" message into
+ * a wrong-password accusation aimed at the one customer whose password is
+ * provably correct.
+ */
+export type DeriveResult =
+  | { descriptor: string; error: null }
+  | { descriptor: null; error: string }
 
 export function useDerivation() {
-  const [state, setState] = useState<DerivationState>({
-    isDeriving: false,
-    error: null,
-  })
+  const [isDeriving, setIsDeriving] = useState(false)
 
   const derive = useCallback(
     async (
       password: string,
       file: RecoveryFile,
-    ): Promise<string | null> => {
-      setState({ isDeriving: true, error: null })
+    ): Promise<DeriveResult> => {
+      setIsDeriving(true)
 
       try {
-        if (file.userKey.keySource !== 'PASSWORD') {
-          throw new RecoveryError(
-            'HARDWARE_KEY',
-            'Hardware wallet key detected. No password needed — import the descriptor directly into your wallet software.',
-          )
+        if (!isPasswordKeySource(file.userKey.keySource)) {
+          throw new RecoveryError('HARDWARE_KEY', ERROR_MESSAGES.HARDWARE_KEY)
         }
 
         if (!file.userKey.derivationProfile || !file.userKey.salt) {
@@ -43,39 +46,37 @@ export function useDerivation() {
           )
         }
 
-        const xprv = await deriveSigningKey(
+        const xprv = await deriveSigningKey({
           password,
-          file.userKey.salt,
-          file.userKey.derivationPath,
-          file.userKey.fingerprint,
-          file.network,
+          saltHex: file.userKey.salt,
+          derivationPath: file.userKey.derivationPath,
+          expectedFingerprint: file.userKey.fingerprint,
+          expectedXpub: file.userKey.xpub,
+          network: file.network,
           profile,
-        )
+        })
 
         const descriptor = replaceKeyByFingerprint(
           file.outputDescriptor,
           file.userKey.fingerprint,
           xprv,
+          file.userKey.xpub,
         )
 
-        setState({ isDeriving: false, error: null })
-        return descriptor
+        return { descriptor, error: null }
       } catch (err) {
         console.error('[useDerivation] Error during key derivation:', err)
         const message =
           err instanceof RecoveryError
             ? err.userMessage
-            : `An unexpected error occurred during key derivation. ${err instanceof Error ? err.message : String(err)}`
-        setState({ isDeriving: false, error: message })
-        return null
+            : `Something went wrong while rebuilding your key. ${err instanceof Error ? err.message : String(err)}`
+        return { descriptor: null, error: message }
+      } finally {
+        setIsDeriving(false)
       }
     },
     [],
   )
 
-  return {
-    isDeriving: state.isDeriving,
-    derivationError: state.error,
-    derive,
-  }
+  return { isDeriving, derive }
 }

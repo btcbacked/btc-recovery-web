@@ -33,11 +33,16 @@ export function AppLayout({ children, className, onReset }: AppLayoutProps) {
       {/* Logo — top left (SVG inlined for offline file:// support) */}
       <div className="absolute left-6 top-6 z-20 h-7 w-[120px] md:left-[70px] md:top-[60px] md:w-[150px]">
         {onReset ? (
+          /*
+           * The logo is only 28px tall, which is a cramped target. The padding
+           * grows the button to a comfortable one, and the matching negative
+           * margin keeps the logo itself at its original size and position.
+           */
           <button
             type="button"
             onClick={onReset}
-            className="size-full rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring transition-opacity hover:opacity-75 [&_svg]:size-full"
-            aria-label="BTCBacked — return to start"
+            className="-m-2 block size-[calc(100%+1rem)] rounded p-2 transition-opacity hover:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&_svg]:size-full"
+            aria-label="BTCBacked, return to start"
             dangerouslySetInnerHTML={{ __html: logoSvg }}
           />
         ) : (
@@ -62,7 +67,7 @@ export function AppLayout({ children, className, onReset }: AppLayoutProps) {
         <div className="mx-auto max-w-[540px] px-4">
           <div className="mb-4 h-px bg-gradient-to-r from-transparent via-border to-transparent opacity-60" />
           <p className="text-center font-outfit text-[var(--text-body-sm)] text-muted-foreground">
-            BTCBacked AG &mdash; Zug, Switzerland
+            BTCBacked AG, Zug, Switzerland
           </p>
         </div>
       </div>

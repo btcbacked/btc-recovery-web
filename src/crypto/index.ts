@@ -1,11 +1,11 @@
-export { parseRecoveryFile } from './recovery-file'
+export { parseRecoveryFile, isPasswordKeySource, describeKeySource } from './recovery-file'
 export type { RecoveryFile, Network, Role, KeySource, RecoveryFileContext, RecoveryFileUserKey } from './recovery-file'
 export { validate } from './validation'
 export { isValidFingerprint, isValidHex, isValidDerivationPath } from './validation'
 export { getProfile, isSupportedProfile } from './profiles'
 export type { DerivationProfile, Algorithm } from './profiles'
 export { deriveSeed, deriveMasterKey, computeFingerprint, deriveXprv, deriveSigningKey } from './derivation'
-export { replaceKeyByFingerprint, descriptorChecksum } from './descriptor'
+export { replaceKeyByFingerprint, descriptorChecksum, withChecksum } from './descriptor'
 export { RecoveryError, ERROR_MESSAGES } from './errors'
 export type { RecoveryErrorCode } from './errors'
 
@@ -16,7 +16,7 @@ export { bitcoin, ECPair, ecc } from './bitcoin-lib'
 export { getBitcoinNetwork, getMempoolApiBase } from './networks'
 
 // Descriptor parser
-export { parseDescriptor, findUserKey } from './descriptor-parser'
+export { parseDescriptor, findUserKey, usesStandardChildDerivation } from './descriptor-parser'
 export type { ParsedDescriptor, ParsedKeyEntry } from './descriptor-parser'
 
 // Address derivation

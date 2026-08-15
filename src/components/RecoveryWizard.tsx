@@ -23,8 +23,10 @@ import { useDerivation } from '@/hooks/useDerivation'
 import { useWalletState } from '@/hooks/useWalletState'
 import { usePsbtWorkflow } from '@/hooks/usePsbtWorkflow'
 import { useNetworkConfig } from '@/hooks/useNetworkConfig'
-import { parseDescriptor } from '@/crypto/descriptor-parser'
+import { parseDescriptor, usesStandardChildDerivation } from '@/crypto/descriptor-parser'
 import { deriveMultisigAddress } from '@/crypto/address'
+import { withChecksum } from '@/crypto/descriptor'
+import { isPasswordKeySource } from '@/crypto/recovery-file'
 import type { RecoveryFile } from '@/crypto'
 import type { TxOutput } from '@/crypto/psbt-builder'
 
@@ -80,7 +82,7 @@ class WizardErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
 
 export function RecoveryWizard() {
   const wizard = useRecoveryWizard()
-  const { derive, derivationError } = useDerivation()
+  const { derive } = useDerivation()
 
   // Network config — derived from the recovery file's network once loaded
   const network = wizard.recoveryFile?.network ?? 'mainnet'
@@ -123,12 +125,20 @@ export function RecoveryWizard() {
 
   const handleInfoConfirm = useCallback(() => {
     if (!wizard.recoveryFile) return
-    if (wizard.recoveryFile.userKey.keySource === 'PASSWORD') {
+    if (isPasswordKeySource(wizard.recoveryFile.userKey.keySource)) {
       setStep('password')
-    } else {
-      setStep('hardware')
+      return
     }
-  }, [wizard.recoveryFile, setStep])
+    // A device-held key has nothing to derive, so the password path never runs
+    // and never fills this in. The file's own descriptor already carries every
+    // public key, which is all the escrow address and balance need.
+    try {
+      setParsedDescriptor(parseDescriptor(wizard.recoveryFile.outputDescriptor))
+    } catch {
+      // Non-fatal. The descriptor is still shown and can be imported by hand.
+    }
+    setStep('hardware')
+  }, [wizard.recoveryFile, setStep, setParsedDescriptor])
 
   const handlePasswordSubmit = useCallback(
     async (password: string) => {
@@ -136,7 +146,10 @@ export function RecoveryWizard() {
       setPasswordError(null)
       setStep('deriving')
 
-      const descriptor = await derive(password, wizard.recoveryFile)
+      // The error comes back from the call, not from hook state: this callback
+      // was captured on an earlier render, so state read here is the value from
+      // before the attempt.
+      const { descriptor, error } = await derive(password, wizard.recoveryFile)
       if (descriptor) {
         setDescriptor(descriptor)
 
@@ -155,14 +168,20 @@ export function RecoveryWizard() {
         setStep('result')
       } else {
         setStep('password')
-        setPasswordError(
-          derivationError ??
-            'The password you entered does not match this recovery file. Please check your password and try again.',
-        )
+        setPasswordError(error)
       }
     },
-    [wizard.recoveryFile, derive, derivationError, setPasswordError, setStep, setDescriptor, setParsedDescriptor, setXprv],
+    [wizard.recoveryFile, derive, setPasswordError, setStep, setDescriptor, setParsedDescriptor, setXprv],
   )
+
+  /**
+   * Fetch the escrow balance for whichever descriptor we currently hold.
+   * Used by every screen that shows the user an address to check against.
+   */
+  const handleLoadWallet = useCallback(() => {
+    if (!wizard.parsedDescriptor || !wizard.recoveryFile) return
+    loadWallet(wizard.parsedDescriptor, wizard.recoveryFile.network, networkConfig.apiBaseUrl)
+  }, [wizard.parsedDescriptor, wizard.recoveryFile, loadWallet, networkConfig.apiBaseUrl])
 
   // ── Handlers: action-choice step ──────────────────────────────────────────
 
@@ -345,6 +364,28 @@ export function RecoveryWizard() {
     }
   })()
 
+  // The descriptor the user copies into another wallet. The password path has
+  // already rebuilt and checksummed one; the hardware path uses the file's own,
+  // checksummed here so wallets that demand a checksum accept it.
+  const activeDescriptor = (() => {
+    if (wizard.descriptor) return wizard.descriptor
+    if (!wizard.recoveryFile) return ''
+    try {
+      return withChecksum(wizard.recoveryFile.outputDescriptor)
+    } catch {
+      return wizard.recoveryFile.outputDescriptor
+    }
+  })()
+
+  // False for older files this tool cannot reproduce, so the screens that show
+  // an address can tell the user not to trust it.
+  const isStandardDerivation = wizard.parsedDescriptor
+    ? usesStandardChildDerivation(wizard.parsedDescriptor)
+    : true
+
+  const descriptorHasPrivateKey =
+    wizard.parsedDescriptor?.keys.some((k) => k.isPrivate) ?? false
+
   return (
     <div className="space-y-8">
       <div className="flex justify-center">
@@ -393,6 +434,14 @@ export function RecoveryWizard() {
             <div key="hardware" className="animate-step-enter">
               <HardwareStep
                 file={wizard.recoveryFile}
+                descriptor={activeDescriptor}
+                escrowAddress={escrowAddress}
+                balance={walletState.balance}
+                depositCount={walletState.utxos.length}
+                isLoadingBalance={walletState.isLoading}
+                balanceError={walletState.error}
+                isStandardDerivation={isStandardDerivation}
+                onLoadBalance={handleLoadWallet}
                 onContinue={() => setStep('guide')}
                 onBack={() => setStep('info')}
               />
@@ -417,6 +466,15 @@ export function RecoveryWizard() {
           {wizard.step === 'guide' && (
             <div key="guide" className="animate-step-enter">
               <WalletGuideStep
+                descriptor={activeDescriptor}
+                descriptorHasPrivateKey={descriptorHasPrivateKey}
+                escrowAddress={escrowAddress}
+                balance={walletState.balance}
+                depositCount={walletState.utxos.length}
+                isLoadingBalance={walletState.isLoading}
+                balanceError={walletState.error}
+                isStandardDerivation={isStandardDerivation}
+                onLoadBalance={handleLoadWallet}
                 onReset={() => { psbtReset(); walletReset(); reset() }}
                 onBackToDescriptor={wizard.descriptor ? () => setStep('result') : undefined}
               />

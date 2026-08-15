@@ -41,7 +41,7 @@ export function ResultStep({ descriptor, onContinue }: ResultStepProps) {
         <p className="font-medium text-foreground">What is this descriptor?</p>
         <p className="mt-1">
           A wallet descriptor is a self-contained string that encodes your multisig wallet
-          configuration — including your recovered private key and the other participants'
+          configuration, including your recovered private key and the other participants'
           public keys. Paste it into Sparrow Wallet or another compatible wallet to view
           your balance and broadcast transactions.
         </p>

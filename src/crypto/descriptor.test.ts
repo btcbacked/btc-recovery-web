@@ -1,6 +1,17 @@
 // @vitest-environment node
-import { descriptorChecksum, replaceKeyByFingerprint } from './descriptor'
+import { BIP32Factory } from 'bip32'
+import { descriptorChecksum, replaceKeyByFingerprint, withChecksum } from './descriptor'
 import { RecoveryError } from './errors'
+import { bitcoin, ecc } from './bitcoin-lib'
+import {
+  MIXED_DEPTH_DESCRIPTOR,
+  USER_FINGERPRINT,
+  USER_ORIGIN_NODE,
+  USER_XPRV,
+  USER_XPUB,
+} from './__fixtures__/deep-paths'
+
+const bip32 = BIP32Factory(ecc)
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -330,5 +341,135 @@ describe('replaceKeyByFingerprint', () => {
     // Count occurrences of xpub in body
     const xpubCount = (bodyAfterReplace.match(/xpub/g) ?? []).length
     expect(xpubCount).toBe(1)
+  })
+
+  // ---------------------------------------------------------------------------
+  // The optional expectedXpub check.
+  //
+  // The fingerprint is a depth 0 value shared by every key this wallet ever
+  // produces, so matching on it alone does not establish that the leg being
+  // spliced is the user's leg. The descriptor and the recovery file agree
+  // today, so these cover a guard against future drift, not a live defect.
+  // ---------------------------------------------------------------------------
+  describe('when the file also records the expected xpub', () => {
+    /** A real tpub for the same wallet that is NOT the recorded origin key. */
+    const OTHER_XPUB = USER_ORIGIN_NODE.derive(9).neutered().toBase58()
+
+    /** The real descriptor with the user's leg carrying some other key. */
+    const DRIFTED_DESCRIPTOR = MIXED_DEPTH_DESCRIPTOR.replace(
+      USER_XPUB,
+      OTHER_XPUB,
+    )
+
+    it('splices the key when the descriptor leg is the recorded one', () => {
+      const result = replaceKeyByFingerprint(
+        MIXED_DEPTH_DESCRIPTOR,
+        USER_FINGERPRINT,
+        USER_XPRV,
+        USER_XPUB,
+      )
+
+      expect(result).toContain(USER_XPRV)
+      expect(result).not.toContain(USER_XPUB)
+    })
+
+    it('refuses to splice into a leg carrying a different key', () => {
+      expect(DRIFTED_DESCRIPTOR).not.toBe(MIXED_DEPTH_DESCRIPTOR)
+
+      try {
+        replaceKeyByFingerprint(
+          DRIFTED_DESCRIPTOR,
+          USER_FINGERPRINT,
+          USER_XPRV,
+          USER_XPUB,
+        )
+        expect.fail('a leg that is not the recorded key must not be spliced')
+      } catch (e) {
+        const err = e as RecoveryError
+        expect(err).toBeInstanceOf(RecoveryError)
+        // Both keys belong in the detail, where a reader can compare them.
+        expect(err.detail).toContain(OTHER_XPUB)
+        expect(err.detail).toContain(USER_XPUB)
+      }
+    })
+
+    it('accepts the same key recorded with the other version bytes', () => {
+      // Version bytes take no part in derivation, so an xpub and a tpub for the
+      // same key are the same key and must not read as drift.
+      const mainnetSerialization = bip32
+        .fromPublicKey(
+          Uint8Array.from(USER_ORIGIN_NODE.publicKey),
+          Uint8Array.from(USER_ORIGIN_NODE.chainCode),
+          bitcoin.networks.bitcoin,
+        )
+        .toBase58()
+      expect(mainnetSerialization.startsWith('xpub')).toBe(true)
+
+      const result = replaceKeyByFingerprint(
+        MIXED_DEPTH_DESCRIPTOR,
+        USER_FINGERPRINT,
+        USER_XPRV,
+        mainnetSerialization,
+      )
+
+      expect(result).toContain(USER_XPRV)
+    })
+
+    it('leaves the splice unchecked when no expected xpub is given', () => {
+      // Every other caller in this file relies on this: the check is opt in.
+      const result = replaceKeyByFingerprint(
+        DRIFTED_DESCRIPTOR,
+        USER_FINGERPRINT,
+        USER_XPRV,
+      )
+
+      expect(result).toContain(USER_XPRV)
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// withChecksum
+//
+// The hardware path hands the user the recovery file's own descriptor, which
+// is not guaranteed to carry a checksum. Bitcoin Core refuses a descriptor
+// whose checksum is missing or wrong, so it is attached here.
+// ---------------------------------------------------------------------------
+
+describe('withChecksum', () => {
+  const BODY =
+    "wsh(sortedmulti(2,[ABCD1234/48'/1'/0'/2']tpubAAA/0/*,[5678EF90/48'/1'/0'/2']tpubBBB/0/*))"
+
+  it('appends a checksum to a descriptor that has none', () => {
+    const result = withChecksum(BODY)
+    expect(result.startsWith(`${BODY}#`)).toBe(true)
+    expect(extractChecksum(result)).toHaveLength(8)
+  })
+
+  it('produces a checksum that matches descriptorChecksum for the same body', () => {
+    expect(extractChecksum(withChecksum(BODY))).toBe(descriptorChecksum(BODY))
+  })
+
+  it('leaves the descriptor body byte for byte unchanged', () => {
+    expect(stripChecksum(withChecksum(BODY))).toBe(BODY)
+  })
+
+  it('replaces a wrong checksum rather than trusting it', () => {
+    const result = withChecksum(`${BODY}#zzzzzzzz`)
+    expect(extractChecksum(result)).toBe(descriptorChecksum(BODY))
+    expect(result).not.toContain('zzzzzzzz')
+  })
+
+  it('is idempotent', () => {
+    const once = withChecksum(BODY)
+    expect(withChecksum(once)).toBe(once)
+  })
+
+  it('trims surrounding whitespace before checksumming', () => {
+    expect(withChecksum(`  ${BODY}  `)).toBe(withChecksum(BODY))
+  })
+
+  it('throws a RecoveryError for a descriptor containing an illegal character', () => {
+    expect(() => withChecksum('wsh(sortedmulti(2,é))')).toThrow(RecoveryError)
   })
 })

@@ -1,4 +1,5 @@
 import type { RecoveryFile } from './recovery-file'
+import { isPasswordKeySource } from './recovery-file'
 import { RecoveryError } from './errors'
 import { isSupportedProfile } from './profiles'
 
@@ -53,7 +54,7 @@ function validateUserKey(file: RecoveryFile): void {
     throw new RecoveryError('MALFORMED_FILE', 'Extended public key (xpub) cannot be empty.')
   }
 
-  if (key.keySource === 'PASSWORD') {
+  if (isPasswordKeySource(key.keySource)) {
     if (!key.derivationProfile) {
       throw new RecoveryError(
         'MALFORMED_FILE',
