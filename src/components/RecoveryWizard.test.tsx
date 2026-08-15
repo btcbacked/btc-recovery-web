@@ -6,7 +6,7 @@
  * `setParsedDescriptor` was only ever called on the password path. A wallet that
  * quietly builds the wrong wallet then looks identical to a correct one.
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { Buffer } from 'buffer'
 import { BIP32Factory } from 'bip32'
@@ -14,6 +14,8 @@ import { RecoveryWizard } from './RecoveryWizard'
 import { bitcoin, ecc } from '@/crypto/bitcoin-lib'
 import { parseDescriptor } from '@/crypto/descriptor-parser'
 import { deriveMultisigAddress } from '@/crypto/address'
+import { deriveSeed, computeFingerprint } from '@/crypto/derivation'
+import { getProfile } from '@/crypto/profiles'
 
 // bitcoinjs-lib and bip32 expect a global Buffer, which main.tsx normally supplies.
 ;(globalThis as unknown as { Buffer: typeof Buffer }).Buffer = Buffer
@@ -274,6 +276,75 @@ describe('wallet types', () => {
     expect(screen.getByText('Key Type').parentElement?.textContent).toContain('Password')
     confirmInfo()
     expect(screen.queryByText(EXPECTED_ADDRESS)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A file that disagrees with itself must never be reported as a wrong password
+//
+// The defect this locks down: the wizard read the derivation error out of hook
+// state inside a callback captured on the previous render, so on the first
+// failure it was still null and a wrong-password fallback was shown instead.
+// The one customer whose password is provably correct was told it was wrong.
+// ---------------------------------------------------------------------------
+
+describe('password path — a file that fails its own key check', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const SALT = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+  let inconsistentJson = ''
+
+  beforeAll(async () => {
+    const profile = getProfile('pbkdf2-v1')
+    if (!profile) throw new Error('pbkdf2-v1 profile is missing')
+
+    const seed = await deriveSeed(PASSWORD, SALT, profile)
+    const fingerprint = computeFingerprint(seed, 'testnet')
+
+    // The file records a key this password does not produce at this path, so
+    // the fingerprint check passes and the xpub check fails. That is exactly
+    // the case where the password is right and the file is wrong.
+    const recordedXpub = xpubs[0]
+    inconsistentJson = JSON.stringify({
+      version: 1,
+      network: 'testnet',
+      outputDescriptor:
+        `wsh(sortedmulti(2,[${fingerprint}/48'/1'/0'/2']${recordedXpub}/0/*,` +
+        `[${fps[1]}/48'/1'/0'/2']${xpubs[1]}/0/*,` +
+        `[${fps[2]}/48'/1'/0'/2']${xpubs[2]}/0/*))`,
+      context: { contractId: 'contract-1', role: 'borrower', threshold: 2, totalKeys: 3 },
+      userKey: {
+        keySource: 'PASSWORD',
+        derivationProfile: 'pbkdf2-v1',
+        salt: SALT,
+        derivationPath: "48'/1'/0'/2'",
+        xpub: recordedXpub,
+        fingerprint,
+      },
+    })
+  }, 30_000)
+
+  function submitPassword() {
+    loadFile(inconsistentJson)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+  }
+
+  it('tells the customer the password was correct, not that it was wrong', async () => {
+    submitPassword()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/password is correct/i)
+    expect(alert.textContent).not.toMatch(/does not match this recovery file/i)
+  })
+
+  it('carries the next steps through to the screen', async () => {
+    submitPassword()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/Bitcoin professional you trust/i)
   })
 })
 

@@ -145,7 +145,7 @@ export function SignFinalizeStep({
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Signature status</span>
               <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-semibold text-success">
-                {sigCount} of {analysis.requiredSignatures} — fully signed
+                {sigCount} of {analysis.requiredSignatures}, fully signed
               </span>
             </div>
           </div>

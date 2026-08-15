@@ -92,7 +92,7 @@ export function ReviewSignStep({ analysis, error, onSign, onBack }: ReviewSignSt
           ))}
           {changeOutputs.length === 0 && (
             <div className="px-4 py-3">
-              <p className="text-xs text-muted-foreground">No change output — all funds sent.</p>
+              <p className="text-xs text-muted-foreground">No change output. All funds sent.</p>
             </div>
           )}
         </div>

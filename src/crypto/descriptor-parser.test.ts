@@ -2,9 +2,13 @@
 import { describe, it, expect } from 'vitest'
 import { parseDescriptor, findUserKey, usesStandardChildDerivation } from './descriptor-parser'
 import { RecoveryError } from './errors'
+import { bitcoin, ecc } from './bitcoin-lib'
+import { BIP32Factory } from 'bip32'
 
 // ---------------------------------------------------------------------------
-// Fixture descriptor (taken from valid_password_recovery.json)
+// A 4 level descriptor with placeholder keys, for the parser's own shape rules.
+// The real, self-consistent fixtures live in public/test-fixtures/ and are
+// exercised end to end by public-fixtures.test.ts.
 // ---------------------------------------------------------------------------
 
 const FIXTURE_DESCRIPTOR =
@@ -245,5 +249,72 @@ describe('usesStandardChildDerivation', () => {
 
   it('is false when a key carries no child derivation at all', () => {
     expect(usesStandardChildDerivation(build('', '/0/*'))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The real production shape: mixed origin depths in one descriptor
+//
+// Two user legs at 6 origin levels (BIP-48 plus a per contract branch) and one
+// platform leg at 4 (BIP-88). Every other fixture in this repo is 4 levels on
+// every leg, which is the shape that stopped being true.
+// ---------------------------------------------------------------------------
+
+describe('parseDescriptor at production depth', () => {
+  // Copied verbatim from sparrow-compat-test/production-shape-check.
+  const PRODUCTION_DESCRIPTOR =
+    'wsh(sortedmulti(2,[32a29ff7/48h/1h/0h/2h/0/7]tpubDK8v5iHsfCnZbyGmitGSCM9vZttgWB1Wk3PgcbuacNaRkyFEwn4P4PJVF2X14Jej14i1QiKw4w5b7tEwQ5WCxGqRYGvvG6FtwGTfvgvRk7s/0/*,[753adf1c/88h/1h/0h/0h]tpubDFVitwNBAeUD1ga3ziz3oD8jJByiQHMJfA2eLKSrEeutjj9atC6166TqyN24wSh4aeYqCF5ZqNpmpuJYxiGHMm37uviD1dsKYqoYHBdgEV7/0/*,[e89a1691/48h/1h/0h/2h/0/2]tpubDJ7WeqW2EDigHpXNdZa9KqaDUKuju5xcTvBGbMtGZpFosiHPXbKvZ3pFCYci536qpGWKPs4mQ24FmmTcotSqrQDYbRH7FhH4P1mCJJBdVXL/0/*))#quzfd89e'
+
+  const parsed = parseDescriptor(PRODUCTION_DESCRIPTOR)
+
+  it('finds all three keys', () => {
+    expect(parsed.keys).toHaveLength(3)
+    expect(parsed.threshold).toBe(2)
+  })
+
+  it('keeps the 6 level origin of a user key, branch included', () => {
+    expect(parsed.keys[0]!.originPath).toBe('48h/1h/0h/2h/0/7')
+    expect(parsed.keys[0]!.originPath.split('/')).toHaveLength(6)
+  })
+
+  it('keeps the 4 level origin of the platform key', () => {
+    expect(parsed.keys[1]!.originPath).toBe('88h/1h/0h/0h')
+    expect(parsed.keys[1]!.originPath.split('/')).toHaveLength(4)
+  })
+
+  it('reads the two user legs as different branches of the same account', () => {
+    expect(parsed.keys[2]!.originPath).toBe('48h/1h/0h/2h/0/2')
+    expect(parsed.keys[0]!.originPath).not.toBe(parsed.keys[2]!.originPath)
+  })
+
+  it('reads every leg as the standard /0/* child derivation', () => {
+    expect(parsed.keys.map((k) => k.childDerivation)).toEqual([
+      '0/*',
+      '0/*',
+      '0/*',
+    ])
+    expect(usesStandardChildDerivation(parsed)).toBe(true)
+  })
+
+  it('finds the user key by fingerprint despite the deeper origin', () => {
+    const found = findUserKey(parsed, '32A29FF7')
+    expect(found).not.toBeNull()
+    expect(found!.key.originPath).toBe('48h/1h/0h/2h/0/7')
+  })
+
+  it('pairs every leg with a key at exactly that origin depth', () => {
+    // The invariant the whole design rests on: the bracket path and the key
+    // that follows it describe the same node. A 4 level key behind a 6 level
+    // bracket derives the wrong addresses while looking entirely valid.
+    const bip32 = BIP32Factory(ecc)
+    for (const key of parsed.keys) {
+      const node = bip32.fromBase58(key.extendedKey, bitcoin.networks.testnet)
+      expect(node.depth).toBe(key.originPath.split('/').length)
+    }
+  })
+
+  it('strips the checksum', () => {
+    expect(parsed.raw.endsWith('#quzfd89e')).toBe(false)
+    expect(parsed.raw.endsWith('))')).toBe(true)
   })
 })

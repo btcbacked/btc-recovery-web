@@ -118,7 +118,7 @@ export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps)
         </p>
         <p>
           <strong className="font-medium text-foreground">Where does it come from?</strong>{' '}
-          The other party involved in your loan (the lender or BTCBacked) creates the transaction and sends you the PSBT file — typically by email or through the BTCBacked platform. It ends in <code className="font-mono">.psbt</code> and looks like a long string of random characters when viewed as text (Base64 format, starting with <code className="font-mono">cHNidP8B</code>).
+          The other party involved in your loan (the lender or BTCBacked) creates the transaction and sends you the PSBT file, typically by email or through the BTCBacked platform. It ends in <code className="font-mono">.psbt</code> and looks like a long string of random characters when viewed as text (Base64 format, starting with <code className="font-mono">cHNidP8B</code>).
         </p>
       </div>
 
@@ -163,7 +163,7 @@ export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps)
                 <FileText className="size-10 text-success" aria-hidden="true" />
                 <div>
                   <p className="text-sm font-semibold text-foreground">{fileName ?? 'PSBT loaded'}</p>
-                  <p className="mt-0.5 text-xs text-success">File loaded — parsing...</p>
+                  <p className="mt-0.5 text-xs text-success">File loaded. Parsing...</p>
                 </div>
               </>
             ) : (

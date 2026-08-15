@@ -82,7 +82,7 @@ class WizardErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
 
 export function RecoveryWizard() {
   const wizard = useRecoveryWizard()
-  const { derive, derivationError } = useDerivation()
+  const { derive } = useDerivation()
 
   // Network config — derived from the recovery file's network once loaded
   const network = wizard.recoveryFile?.network ?? 'mainnet'
@@ -146,7 +146,10 @@ export function RecoveryWizard() {
       setPasswordError(null)
       setStep('deriving')
 
-      const descriptor = await derive(password, wizard.recoveryFile)
+      // The error comes back from the call, not from hook state: this callback
+      // was captured on an earlier render, so state read here is the value from
+      // before the attempt.
+      const { descriptor, error } = await derive(password, wizard.recoveryFile)
       if (descriptor) {
         setDescriptor(descriptor)
 
@@ -165,13 +168,10 @@ export function RecoveryWizard() {
         setStep('result')
       } else {
         setStep('password')
-        setPasswordError(
-          derivationError ??
-            'The password you entered does not match this recovery file. Please check your password and try again.',
-        )
+        setPasswordError(error)
       }
     },
-    [wizard.recoveryFile, derive, derivationError, setPasswordError, setStep, setDescriptor, setParsedDescriptor, setXprv],
+    [wizard.recoveryFile, derive, setPasswordError, setStep, setDescriptor, setParsedDescriptor, setXprv],
   )
 
   /**
