@@ -112,19 +112,19 @@ export function BuildTransactionStep({
       id: 'fast',
       label: 'Fast',
       time: '~10 min',
-      rate: feeEstimates ? `~${feeEstimates.fastestFee} sat/vB` : '—',
+      rate: feeEstimates ? `~${feeEstimates.fastestFee} sat/vB` : 'Not available',
     },
     {
       id: 'medium',
       label: 'Medium',
       time: '~30 min',
-      rate: feeEstimates ? `~${feeEstimates.halfHourFee} sat/vB` : '—',
+      rate: feeEstimates ? `~${feeEstimates.halfHourFee} sat/vB` : 'Not available',
     },
     {
       id: 'slow',
       label: 'Slow',
       time: '~1 hr',
-      rate: feeEstimates ? `~${feeEstimates.hourFee} sat/vB` : '—',
+      rate: feeEstimates ? `~${feeEstimates.hourFee} sat/vB` : 'Not available',
     },
     { id: 'custom', label: 'Custom', time: '', rate: '' },
   ]

@@ -15,6 +15,18 @@ import { BIP32Factory } from 'bip32'
 import { Buffer } from 'buffer'
 import type { Utxo } from './blockchain-api'
 import type { DerivedAddress } from './address'
+import { psbtToBase64, psbtFromBase64 } from './psbt-codec'
+import { signPsbtWithXprv } from './psbt-signer'
+import { finalizePsbt, extractRawTransaction } from './psbt-finalizer'
+import {
+  MIXED_DEPTH_DESCRIPTOR,
+  USER_FINGERPRINT,
+  USER_XPRV,
+  USER_XPUB,
+  COSIGNER_FINGERPRINT,
+  COSIGNER_XPRV,
+  userChildPubkey,
+} from './__fixtures__/deep-paths'
 
 const bip32 = BIP32Factory(ecc)
 const NET = bitcoin.networks.testnet
@@ -415,5 +427,145 @@ describe('buildPsbt – successful PSBT construction', () => {
     // via the txInputs API
     expect(psbt.txInputs.length).toBe(1)
     expect(psbt.txInputs[0]!.index).toBe(vout)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PSBT construction at the depth production uses
+//
+// buildPsbt always appends exactly /{chain}/{index} to whatever origin path
+// the descriptor names. These tests pin that at a 6 level user origin and a
+// 4 level platform origin in the same input, and check what actually lands in
+// the serialized PSBT rather than what the object holds in memory.
+// ---------------------------------------------------------------------------
+
+describe('buildPsbt at production depth', () => {
+  const mixed = parseDescriptor(MIXED_DEPTH_DESCRIPTOR)
+
+  function buildAt(index: number, chain = 0): bitcoin.Psbt {
+    const addressInfo = deriveMultisigAddress(mixed, index, 'testnet', chain)
+    return buildPsbt({
+      utxos: [{ utxo: makeUtxo(fakeTxid(3), 0, 500_000), addressInfo }],
+      outputs: [{ address: DESTINATION_ADDRESS, value: 400_000 }],
+      changeAddress: null,
+      feeRate: 5,
+      network: 'testnet',
+      parsedDescriptor: mixed,
+    })
+  }
+
+  /** The paths as they come back out of a serialized PSBT. */
+  function roundTripPaths(psbt: bitcoin.Psbt): string[] {
+    const decoded = psbtFromBase64(psbtToBase64(psbt), 'testnet')
+    return (decoded.data.inputs[0]!.bip32Derivation ?? []).map((d) => d.path)
+  }
+
+  it('writes the full 8 level path for a user key', () => {
+    const paths = roundTripPaths(buildAt(4))
+    expect(paths).toContain("m/48'/1'/0'/2'/0/7/0/4")
+  })
+
+  it('writes the full 6 level path for the platform key in the same input', () => {
+    const paths = roundTripPaths(buildAt(4))
+    expect(paths).toContain("m/88'/1'/0'/0'/0/4")
+  })
+
+  it('appends exactly chain and index, never more', () => {
+    for (const path of roundTripPaths(buildAt(4))) {
+      const components = path.split('/').slice(1)
+      expect(components.slice(-2)).toEqual(['0', '4'])
+    }
+  })
+
+  it('carries the change branch into the path', () => {
+    const paths = roundTripPaths(buildAt(6, 1))
+    expect(paths).toContain("m/48'/1'/0'/2'/0/7/1/6")
+    expect(paths).toContain("m/88'/1'/0'/0'/1/6")
+  })
+
+  it('keeps every hardened level hardened through serialization', () => {
+    // The descriptor writes hardened levels as h. PSBT path encoding only
+    // understands the apostrophe and does not complain about anything else:
+    // an h reaching the encoder comes back as an UNHARDENED index, silently,
+    // and a signature made against that key would be worthless.
+    //
+    // Asserting the ABSENCE of h here would prove nothing, because the encoder
+    // drops the marker either way and no decoded path can contain one. The
+    // decoded paths themselves are the only evidence, so pin them exactly.
+    expect(roundTripPaths(buildAt(0)).sort()).toEqual([
+      "m/48'/1'/0'/2'/0/2/0/0",
+      "m/48'/1'/0'/2'/0/7/0/0",
+      "m/88'/1'/0'/0'/0/0",
+    ])
+  })
+
+  it('pairs each path with the pubkey that path derives', () => {
+    const decoded = psbtFromBase64(psbtToBase64(buildAt(4)), 'testnet')
+    const entry = (decoded.data.inputs[0]!.bip32Derivation ?? []).find(
+      (d) => d.path === "m/48'/1'/0'/2'/0/7/0/4",
+    )
+    expect(entry).toBeDefined()
+    expect(Buffer.compare(Buffer.from(entry!.pubkey), userChildPubkey(0, 4))).toBe(0)
+  })
+
+  it('treats an uppercase H marker as hardened, like h and the apostrophe', () => {
+    const upperCaseOrigin = MIXED_DEPTH_DESCRIPTOR.replace(
+      '48h/1h/0h/2h/0/7',
+      '48H/1H/0H/2H/0/7',
+    )
+    expect(upperCaseOrigin).not.toBe(MIXED_DEPTH_DESCRIPTOR)
+
+    const parsedUpper = parseDescriptor(upperCaseOrigin)
+    const addressInfo = deriveMultisigAddress(parsedUpper, 4, 'testnet')
+    const psbt = buildPsbt({
+      utxos: [{ utxo: makeUtxo(fakeTxid(4), 0, 500_000), addressInfo }],
+      outputs: [{ address: DESTINATION_ADDRESS, value: 400_000 }],
+      changeAddress: null,
+      feeRate: 5,
+      network: 'testnet',
+      parsedDescriptor: parsedUpper,
+    })
+
+    expect(roundTripPaths(psbt)).toContain("m/48'/1'/0'/2'/0/7/0/4")
+  })
+
+  it('does not invent a level when a key carries no origin path', () => {
+    // [FP]xpub with no path. Building `m/` + '' + `/chain/index` gives
+    // `m//0/4`, whose empty component decodes as an extra level 0.
+    const noOrigin = `wsh(sortedmulti(1,[${USER_FINGERPRINT}]${USER_XPUB}/0/*))`
+    const parsedNoOrigin = parseDescriptor(noOrigin)
+    expect(parsedNoOrigin.keys[0]!.originPath).toBe('')
+
+    const addressInfo = deriveMultisigAddress(parsedNoOrigin, 4, 'testnet')
+    const psbt = buildPsbt({
+      utxos: [{ utxo: makeUtxo(fakeTxid(5), 0, 500_000), addressInfo }],
+      outputs: [{ address: DESTINATION_ADDRESS, value: 400_000 }],
+      changeAddress: null,
+      feeRate: 5,
+      network: 'testnet',
+      parsedDescriptor: parsedNoOrigin,
+    })
+
+    expect(roundTripPaths(psbt)).toEqual(['m/0/4'])
+  })
+
+  it('builds, signs with two of three keys and finalizes at this depth', () => {
+    const psbt = buildAt(4)
+
+    const first = signPsbtWithXprv(psbt, USER_XPRV, USER_FINGERPRINT, 'testnet')
+    expect(first.signedCount).toBe(1)
+
+    const second = signPsbtWithXprv(
+      psbt,
+      COSIGNER_XPRV,
+      COSIGNER_FINGERPRINT,
+      'testnet',
+    )
+    expect(second.signedCount).toBe(1)
+
+    const finalized = finalizePsbt(psbt)
+    const rawTx = extractRawTransaction(finalized)
+    expect(rawTx).toMatch(/^[0-9a-f]+$/)
+    expect(rawTx.length).toBeGreaterThan(0)
   })
 })

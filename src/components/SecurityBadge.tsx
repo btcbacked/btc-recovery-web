@@ -17,7 +17,7 @@ export function SecurityBadge() {
           aria-hidden="true"
         />
       </span>
-      <span>Runs locally &mdash; no data leaves your browser</span>
+      <span>Runs locally. No data leaves your browser.</span>
     </div>
   )
 }

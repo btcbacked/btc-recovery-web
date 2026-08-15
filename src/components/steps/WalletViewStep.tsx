@@ -171,7 +171,7 @@ export function WalletViewStep({
                         {truncateHash(utxo.txid, 10)}:{utxo.vout}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {utxo.status.confirmed ? 'Confirmed' : 'Unconfirmed — pending'}
+                        {utxo.status.confirmed ? 'Confirmed' : 'Unconfirmed'}
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
@@ -213,7 +213,7 @@ export function WalletViewStep({
           </button>
           {!isLoading && balance === 0 && (
             <p className="text-right text-xs text-muted-foreground">
-              No spendable balance — send Bitcoin to your escrow address first.
+              No spendable balance. Send Bitcoin to your escrow address first.
             </p>
           )}
         </div>
