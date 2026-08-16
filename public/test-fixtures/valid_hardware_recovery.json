@@ -10,7 +10,7 @@
   },
   "userKey": {
     "keySource": "COLD_CARD",
-    "derivationPath": "48'/1'/0'/2'",
+    "derivationPath": "m/48'/1'/0'/2'",
     "xpub": "tpubDCxzhZZE3JFMcGNHVVdFh9r1nJ8RvmvXHxYCBjnRNdRNynnD2eLF9TUwP3CwrUUCLco6nBjiH3xYdPHrSbXqME93vgzC9MRfZ2Kb9K2hL5C",
     "fingerprint": "5678EF90"
   }

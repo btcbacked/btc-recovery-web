@@ -19,6 +19,13 @@ type WizardState = {
   parsedDescriptor: ParsedDescriptor | null
   error: string | null
   passwordError: string | null
+  /**
+   * Set when the file's recorded derivation path and its own descriptor bracket
+   * disagree. Held apart from `error` and `passwordError` on purpose: those are
+   * cleared on every step change, and this one has to survive the walk from the
+   * file details screen to the screen that hands over the descriptor.
+   */
+  originPathWarning: string | null
 }
 
 export function useRecoveryWizard() {
@@ -30,6 +37,7 @@ export function useRecoveryWizard() {
     parsedDescriptor: null,
     error: null,
     passwordError: null,
+    originPathWarning: null,
   })
 
   const setStep = useCallback((step: WizardStep) => {
@@ -37,7 +45,14 @@ export function useRecoveryWizard() {
   }, [])
 
   const setRecoveryFile = useCallback((file: RecoveryFile) => {
-    setState((prev) => ({ ...prev, recoveryFile: file, error: null }))
+    // The warning belongs to whichever file is loaded, so a second upload must
+    // not inherit the first one's.
+    setState((prev) => ({
+      ...prev,
+      recoveryFile: file,
+      error: null,
+      originPathWarning: null,
+    }))
   }, [])
 
   const setDescriptor = useCallback((descriptor: string) => {
@@ -60,6 +75,10 @@ export function useRecoveryWizard() {
     setState((prev) => ({ ...prev, passwordError }))
   }, [])
 
+  const setOriginPathWarning = useCallback((originPathWarning: string | null) => {
+    setState((prev) => ({ ...prev, originPathWarning }))
+  }, [])
+
   const reset = useCallback(() => {
     setState({
       step: 'upload',
@@ -69,6 +88,7 @@ export function useRecoveryWizard() {
       parsedDescriptor: null,
       error: null,
       passwordError: null,
+      originPathWarning: null,
     })
   }, [])
 
@@ -125,6 +145,7 @@ export function useRecoveryWizard() {
     setParsedDescriptor,
     setError,
     setPasswordError,
+    setOriginPathWarning,
     reset,
   }
 }

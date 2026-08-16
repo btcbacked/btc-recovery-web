@@ -107,12 +107,12 @@ export function WalletViewStep({
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
             <div className="flex-1 space-y-2">
-              <p className="text-sm font-medium text-destructive">Failed to Load Wallet</p>
-              <p className="text-xs text-destructive/80">{error}</p>
+              <p className="text-sm font-medium text-destructive-text">Failed to Load Wallet</p>
+              <p className="text-xs text-destructive-text">{error}</p>
               <button
                 type="button"
                 onClick={() => onLoadWallet(parsedDescriptor, network, apiBaseUrl)}
-                className="btn-outline inline-flex items-center gap-1.5 rounded-[var(--radius-base)] border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+                className="btn-outline inline-flex items-center gap-1.5 rounded-[var(--radius-base)] border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/10"
               >
                 <RefreshCw className="size-3" aria-hidden="true" />
                 Retry
