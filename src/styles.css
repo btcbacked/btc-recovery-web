@@ -100,13 +100,25 @@ pre,
   --foreground: #151515;
   --text-primary: #151515;
   --text-secondary: #151515;
-  --text-muted: rgba(21, 21, 21, 0.5);
+  /* Secondary body copy, ~128 sites. The alpha is set by the worst opaque
+     surface this text actually lands on, which is not the card: the info
+     panels are bg-accent/50, the 10px pill badges and code chips are a full
+     bg-accent (#f5f5f5), and BroadcastStep puts muted copy over
+     bg-destructive/10. At 0.5 every one of those was ~3.4:1. 0.59 clears the
+     card (4.58:1) but still fails bg-accent (4.48:1) and bg-destructive/10
+     (4.39:1). 0.62 is the first step that clears all of them, worst case
+     4.87:1 on bg-destructive/10. */
+  --text-muted: rgba(21, 21, 21, 0.62);
   --card: #ffffff;
   --card-foreground: var(--foreground);
   --popover: #ffffff;
   --popover-foreground: var(--foreground);
   --primary: #fe7921;
   --primary-foreground: #f3f3f3;
+  /* Readable brand text. --primary is the fill/border/icon orange: as copy on
+     bg-primary/10 it is 2.38:1. This is 4.90:1 there and 5.39:1 on the card.
+     One site uses it, the selected fee preset label. */
+  --primary-text: #b54708;
   --secondary: #f5f5f5;
   --secondary-foreground: var(--foreground);
   --muted: #f5f5f5;
@@ -128,12 +140,26 @@ pre,
   --destructive: #f04438;
   --destructive-foreground: #f3f3f3;
   --destructive-bg: rgba(240, 68, 56, 0.1);
+  /* Readable error text, and every error message in this tool is one. Same
+     split as --warning-text: --destructive stays the fill/border/icon red,
+     where it is doing a non-text job and its brightness is the point. As copy
+     it was 3.27:1 on a bg-destructive/10 banner and 3.73:1 on the bare card.
+     This is red-700, 5.72:1 on the banner and 6.53:1 on the card. */
+  --destructive-text: #b42318;
   --success: #12b76a;
   --success-foreground: #f3f3f3;
   --success-bg: rgba(16, 140, 64, 0.1);
+  /* Readable success text. --success is a fill/border/icon green: as copy on
+     bg-success/10 it is 2.36:1, the worst of the three. This is green-700,
+     5.28:1 on the tint and 5.81:1 on the card. */
+  --success-text: #087443;
   --warning: #f79009;
   --warning-foreground: #f3f3f3;
   --warning-bg: rgba(247, 144, 9, 0.1);
+  /* Readable warning text. --warning is a fill/border/icon colour: at 2.16:1 on
+     --warning-bg it is unreadable as body copy. This is amber-800, which is
+     6.52:1 on --warning-bg and 7.09:1 on white. Use it for any warning TEXT. */
+  --warning-text: #92400e;
   --info: #1570ef;
   --info-foreground: #f3f3f3;
 
@@ -149,6 +175,51 @@ pre,
 
   /* Transition duration for theme switch */
   --theme-transition: 200ms;
+}
+
+
+/* ============================================================
+   TOKEN REGISTRATION — REQUIRED, DO NOT DELETE
+
+   Tailwind v4 generates a colour utility ONLY for names registered
+   in an @theme block under the --color-* namespace. Declaring a token
+   in :root alone gives you the custom property and NO utility, so
+   `text-warning` and friends silently emit nothing and the element
+   falls back to inherited text. That is a silent failure: the markup
+   looks styled, the build passes, and the colour is simply absent.
+
+   Every token below is used by a utility in src/. Adding a new
+   semantic colour utility means adding its token here too, and adding
+   it to the guard in styles.theme.test.ts.
+
+   `inline` makes utilities reference the :root variable directly
+   (color: var(--warning)) rather than copying its value, so the
+   semantic tokens above stay the single source of truth.
+
+   Do NOT register the --text-* tokens here: in v4 --text-* is the
+   font-size namespace, so --text-primary would make `text-primary`
+   a font-size utility rather than a colour.
+   ============================================================ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-text: var(--primary-text);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-text: var(--destructive-text);
+  --color-success: var(--success);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-text: var(--warning-text);
+  --color-info: var(--info);
 }
 
 

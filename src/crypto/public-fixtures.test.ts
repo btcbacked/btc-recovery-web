@@ -18,6 +18,7 @@ import { deriveSigningKey } from './derivation'
 import { replaceKeyByFingerprint } from './descriptor'
 import { parseDescriptor, findUserKey } from './descriptor-parser'
 import { deriveMultisigAddress } from './address'
+import { originPathWarning } from './origin-path'
 
 /** The password both password fixtures are built from. Documented in README. */
 const FIXTURE_PASSWORD = 'btcbacked-recovery-demo'
@@ -39,9 +40,17 @@ function loadFixture(name: string): string {
   return entry[1]
 }
 
-/** Both shapes in circulation: the 4 level account and the 6 level branch. */
+/**
+ * Both shapes in circulation: the 4 level account and the 6 level branch.
+ *
+ * The 4 level one also carries the leading `m/` the backend writes into
+ * `userKey.derivationPath` and strips from the descriptor bracket, so the two
+ * fields differ as text in the way every genuine file's do. Any check that
+ * compares them has to survive that, and without a fixture in this shape it
+ * would go green while refusing every real customer. Do not remove the `m/`.
+ */
 const PASSWORD_FIXTURES = [
-  ['valid_password_recovery.json', "48'/1'/0'/2'", 4],
+  ['valid_password_recovery.json', "m/48'/1'/0'/2'", 4],
   ['valid_password_recovery_6level.json', '48h/1h/0h/2h/0/7', 6],
 ] as const
 
@@ -52,7 +61,16 @@ describe('shipped password recovery fixtures', () => {
 
       it(`records a ${depth} level derivation path`, () => {
         expect(file.userKey.derivationPath).toBe(expectedPath)
-        expect(file.userKey.derivationPath.split('/')).toHaveLength(depth)
+        expect(
+          file.userKey.derivationPath.replace(/^m\//, '').split('/'),
+        ).toHaveLength(depth)
+      })
+
+      it('is not reported as disagreeing with its own descriptor', () => {
+        // The bracket in this file carries no `m/` and the recorded path may.
+        // A naive comparison of the two fields reports this fixture, which is
+        // exactly what it would do to a customer's file.
+        expect(originPathWarning(file)).toBeNull()
       })
 
       it('recovers the signing key from the documented password', async () => {
@@ -135,5 +153,15 @@ describe('shipped hardware recovery fixture', () => {
     const file = parseRecoveryFile(loadFixture('valid_hardware_recovery.json'))
     expect(file.userKey.keySource).not.toBe('PASSWORD')
     expect(file.userKey.salt).toBeUndefined()
+  })
+
+  it('carries the recorded path in the shape the backend writes it', () => {
+    const file = parseRecoveryFile(loadFixture('valid_hardware_recovery.json'))
+    // Same field, same normaliser, whatever the key source. A device held key
+    // is the population the path check helps most, because registering the key
+    // on a device is the one thing a wrong path actually breaks.
+    expect(file.userKey.derivationPath.startsWith('m/')).toBe(true)
+    expect(file.outputDescriptor).not.toContain('/m/')
+    expect(originPathWarning(file)).toBeNull()
   })
 })

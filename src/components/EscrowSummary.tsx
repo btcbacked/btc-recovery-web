@@ -43,7 +43,7 @@ export function EscrowSummary({
       {!isStandardDerivation && (
         <div className="flex items-start gap-2 rounded-[var(--radius-base)] border border-destructive/30 bg-destructive/10 px-4 py-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-          <p className="text-xs text-destructive">
+          <p className="text-xs text-destructive-text">
             <strong>Do not rely on the address or balance below.</strong> This recovery file
             uses an older layout that this tool cannot check for you. Please contact BTCBacked
             support before you move any funds.
@@ -69,13 +69,13 @@ export function EscrowSummary({
 
       {!isLoading && error && (
         <div className="rounded-[var(--radius-base)] border border-warning/30 bg-warning/10 px-4 py-3">
-          <p className="text-xs text-warning">
+          <p className="text-xs text-warning-text">
             The balance could not be loaded: {error} The address above is still correct.
           </p>
           <button
             type="button"
             onClick={onLoad}
-            className="btn-outline mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius-base)] border border-warning/30 px-3 py-1.5 text-xs font-medium text-warning hover:bg-warning/10"
+            className="btn-outline mt-2 inline-flex items-center gap-1.5 rounded-[var(--radius-base)] border border-warning/30 px-3 py-1.5 text-xs font-medium text-warning-text hover:bg-warning/10"
           >
             <RefreshCw className="size-3" aria-hidden="true" />
             Try again

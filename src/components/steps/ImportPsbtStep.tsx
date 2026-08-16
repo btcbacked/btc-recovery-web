@@ -163,7 +163,7 @@ export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps)
                 <FileText className="size-10 text-success" aria-hidden="true" />
                 <div>
                   <p className="text-sm font-semibold text-foreground">{fileName ?? 'PSBT loaded'}</p>
-                  <p className="mt-0.5 text-xs text-success">File loaded. Parsing...</p>
+                  <p className="mt-0.5 text-xs text-success-text">File loaded. Parsing...</p>
                 </div>
               </>
             ) : (
@@ -191,7 +191,7 @@ export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps)
       {displayError && (
         <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-          <p className="text-sm text-destructive">{displayError}</p>
+          <p className="text-sm text-destructive-text">{displayError}</p>
         </div>
       )}
 
