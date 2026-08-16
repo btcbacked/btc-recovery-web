@@ -172,7 +172,7 @@ export function BuildTransactionStep({
           spellCheck={false}
         />
         {addressError && (
-          <p className="text-xs text-destructive" role="alert">{addressError}</p>
+          <p className="text-xs text-destructive-text" role="alert">{addressError}</p>
         )}
       </div>
 
@@ -223,7 +223,7 @@ export function BuildTransactionStep({
               <p className="text-xs text-muted-foreground">{formatSats(amountSats)} sats</p>
             )}
             {amountError && (
-              <p className="text-xs text-destructive" role="alert">{amountError}</p>
+              <p className="text-xs text-destructive-text" role="alert">{amountError}</p>
             )}
           </>
         )}
@@ -252,7 +252,7 @@ export function BuildTransactionStep({
               className={cn(
                 'rounded-[var(--radius-base)] border px-3 py-2.5 text-center text-xs transition-colors',
                 feePreset === preset.id
-                  ? 'border-primary bg-primary/10 font-medium text-primary'
+                  ? 'border-primary bg-primary/10 font-medium text-primary-text'
                   : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground',
               )}
             >
@@ -293,7 +293,7 @@ export function BuildTransactionStep({
       {/* PSBT build error */}
       {psbtError && (
         <div className="rounded-[var(--radius-base)] border border-destructive/20 bg-destructive/10 px-4 py-3">
-          <p className="text-sm text-destructive">{psbtError}</p>
+          <p className="text-sm text-destructive-text">{psbtError}</p>
         </div>
       )}
 

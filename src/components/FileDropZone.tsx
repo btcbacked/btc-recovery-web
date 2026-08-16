@@ -156,7 +156,7 @@ export function FileDropZone({ onFileContent, error }: FileDropZoneProps) {
               <FileText className="size-10 text-success transition-colors duration-200" aria-hidden="true" />
               <div>
                 <p className="text-sm font-semibold text-foreground">{fileName}</p>
-                <p className="mt-0.5 text-xs text-success">File loaded successfully</p>
+                <p className="mt-0.5 text-xs text-success-text">File loaded successfully</p>
               </div>
             </>
           ) : (
@@ -182,7 +182,7 @@ export function FileDropZone({ onFileContent, error }: FileDropZoneProps) {
       </div>
 
       {displayError && (
-        <p className="text-xs text-destructive" role="alert">{displayError}</p>
+        <p className="text-xs text-destructive-text" role="alert">{displayError}</p>
       )}
     </div>
   )

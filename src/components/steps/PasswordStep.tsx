@@ -31,7 +31,7 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
       {/* whitespace-pre-line: the longer messages are a lead sentence followed
           by a short list, and the line breaks carry that shape. */}
       {error && (
-        <div className="whitespace-pre-line rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+        <div className="whitespace-pre-line rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3 text-sm text-destructive-text" role="alert">
           {error}
         </div>
       )}

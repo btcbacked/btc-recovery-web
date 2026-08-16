@@ -56,6 +56,7 @@ src/
     recovery-file.ts      # RecoveryFile type + parser/validator
     derivation.ts         # PBKDF2 seed → BIP32 master key → signing key derivation
     descriptor.ts         # Output descriptor manipulation and checksum
+    origin-path.ts        # userKey.derivationPath vs the descriptor's own origin bracket
     profiles.ts           # Named derivation profiles (maps profile id → algo + path)
     validation.ts         # Fingerprint, hex, derivation path validators
     errors.ts             # RecoveryError class + typed error codes
@@ -171,6 +172,32 @@ signing failure. `deriveSigningKey` therefore rebuilds the key, neuters it, comp
 `userKey.xpub` and throws `KEY_MISMATCH` when they disagree. The comparison is on the public key and
 chain code, not the base58 string, so version bytes alone never read as a different key. The Rust CLI
 in `key-recovery/` carries the same check, and the two must stay aligned.
+
+**Why `derivationPath` is also checked against the descriptor's own bracket, and why that one only
+warns.** The two key checks compare key material, so a file whose descriptor bracket names a
+different path from `userKey.derivationPath` passes both of them. `origin-path.ts` compares those
+two fields and `RecoveryWizard`'s `handleInfoConfirm` runs it before the password step, for every
+key source.
+
+**The two fields never match as text in a genuine file.** The backend stores
+`m/48h/1h/0h/2h` in `userKey.derivationPath` and strips the `m/` when it builds the bracket, always,
+so a string comparison would report 100% of real recovery files. Both sides are canonicalised
+first. They do NOT share a normaliser: the file side is case sensitive on the hardened marker, like
+`normalizeDerivationPath` in `derivation.ts`, because bip32 has to walk that path and refuses a
+capital `H`; the bracket side is case insensitive, like `psbt-builder.ts`'s `/h\b/gi`, because a
+capital `H` is legal BIP-380 and this tool carries a bracket through verbatim.
+
+It is a WARNING and never a refusal. The emitted descriptor carries the private key and derives
+correctly whatever the bracket says, so addresses, balances and signing are all unaffected; the
+only sink is a wallet or device registering the key. In a doomsday tool a hard stop would turn a
+fully recoverable file into a dead end. The Rust CLI carries the same check, in `preflight()` for
+`derive` and in `verify` (which is the only command a device held key reaches), and the two must
+stay aligned.
+
+`public/test-fixtures/valid_password_recovery.json` and `valid_hardware_recovery.json` carry the
+leading `m/` on purpose, so the shipped fixtures are in the shape the backend actually writes. Do
+not remove it: without a fixture in that shape a check comparing the two fields as strings passes
+the whole suite while refusing every customer.
 
 #### PSBT Data Flow (Path A & B)
 ```

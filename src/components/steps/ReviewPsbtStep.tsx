@@ -29,8 +29,8 @@ export function ReviewPsbtStep({ analysis, onSign, onBack }: ReviewPsbtStepProps
           <span
             className={
               analysis.isFullySigned
-                ? 'rounded-full bg-success/10 px-2.5 py-1 text-xs font-semibold text-success'
-                : 'rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning'
+                ? 'rounded-full bg-success/10 px-2.5 py-1 text-xs font-semibold text-success-text'
+                : 'rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning-text'
             }
           >
             {minSigCount} of {analysis.requiredSignatures} signatures
@@ -125,7 +125,7 @@ export function ReviewPsbtStep({ analysis, onSign, onBack }: ReviewPsbtStepProps
       {/* Warning */}
       <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-        <p className="text-xs text-warning">
+        <p className="text-xs text-warning-text">
           <strong>Verify before signing.</strong> Confirm the destination address and amount are
           correct. Once signed, this cannot be reversed.
         </p>

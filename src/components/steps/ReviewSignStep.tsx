@@ -35,7 +35,7 @@ export function ReviewSignStep({ analysis, error, onSign, onBack }: ReviewSignSt
       {/* Error from psbt workflow */}
       {error && (
         <div className="rounded-[var(--radius-base)] border border-destructive/20 bg-destructive/10 px-4 py-3">
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive-text">{error}</p>
         </div>
       )}
 
@@ -133,7 +133,7 @@ export function ReviewSignStep({ analysis, error, onSign, onBack }: ReviewSignSt
       {/* Signature warning */}
       <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-        <p className="text-xs text-warning">
+        <p className="text-xs text-warning-text">
           <strong>Partial signature.</strong> You will add 1 of {analysis.requiredSignatures} required
           signatures. The transaction cannot be broadcast until all {analysis.requiredSignatures} signatures
           are collected. You will export the PSBT to share with the other signer.
