@@ -172,6 +172,40 @@ function peakOf(value: string): { rgb: RGB; alpha: number } {
   return parseColor(stop[0])
 }
 
+/**
+ * Every colour the `background` gradient of a rule in styles.css can paint.
+ *
+ * Read from the rule rather than a token because the button gradient is not a
+ * token: it is written inline in .btn-primary, and a guard that copied its
+ * stops here would go stale the moment someone retuned the orange.
+ *
+ * The declared stops are sampled pairwise rather than measured on their own.
+ * Contrast against a fixed ink is monotonic in backdrop luminance, and
+ * luminance is convex along an sRGB segment, so a segment's darkest point is
+ * not guaranteed to be one of its endpoints. It happens to be for both
+ * gradients here, but asserting on the colours instead of the named stops is
+ * the same few lines and does not depend on that staying true.
+ */
+function gradientColorsOf(selector: string): RGB[] {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  const rule = stylesSource.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'))
+  if (!rule?.[1]) throw new Error(`styles.css has no rule ${selector}`)
+  const background = rule[1].match(/background:\s*([^;]+);/)
+  if (!background?.[1]) throw new Error(`${selector} declares no background`)
+  const stops = background[1].match(/rgba?\([^)]*\)|#[0-9a-f]{6}/gi)
+  if (!stops || stops.length < 2) throw new Error(`${selector} is not a gradient: ${background[1]}`)
+
+  const rgb = stops.map((stop) => parseColor(stop).rgb)
+  return rgb.flatMap((from, i) => {
+    const to = rgb[i + 1]
+    if (!to) return [from]
+    return Array.from(
+      { length: 21 },
+      (_, step) => from.map((c, k) => Math.round(c + (to[k]! - c) * (step / 20))) as RGB
+    )
+  })
+}
+
 /* ---------- the surfaces text actually renders on ---------- */
 
 /**
@@ -232,6 +266,37 @@ describe('text-role colour tokens are readable on the surface they render on', (
   it.each(cases)('%s is readable in --%s', (_backdrop, token, surface) => {
     const bg = surface()
     expect(contrastRatio(inkOn(token, bg), bg)).toBeGreaterThanOrEqual(AA)
+  })
+})
+
+describe('the primary button label is readable on the orange it sits on', () => {
+  /*
+   * --primary-foreground labels every orange fill in this tool and nothing
+   * else: all 19 .btn-primary buttons (Continue, Derive, Sign, Broadcast,
+   * Copy) and the StepIndicator's current step. There is no site where it
+   * lands on a dark surface, which is why the token itself carries the fix.
+   *
+   * It shipped as the brand light #f3f3f3 on the brand orange, 2.09:1 at rest
+   * and 1.97:1 on hover. These are the only buttons in a tool a customer opens
+   * when BTCBacked no longer exists, so an unreadable label here strands them
+   * with no support line to call.
+   */
+  const fills: [name: string, colors: () => RGB[]][] = [
+    ['the .btn-primary gradient at rest', () => gradientColorsOf('.btn-primary')],
+    [
+      'the .btn-primary gradient on hover',
+      () => gradientColorsOf('.btn-primary:hover:not(:disabled)'),
+    ],
+    // :active restates only transform and box-shadow, so the fill under a
+    // pressed button is whatever hover already put there.
+    ['the StepIndicator current step (bg-primary)', () => [parseColor(readToken('primary')).rgb]],
+  ]
+
+  it.each(fills)('clears WCAG AA at every point of %s', (_name, colors) => {
+    const worst = colors()
+      .map((bg) => ({ bg, ratio: contrastRatio(inkOn('primary-foreground', bg), bg) }))
+      .reduce((a, b) => (a.ratio <= b.ratio ? a : b))
+    expect(worst.ratio, `worst swatch rgb(${worst.bg})`).toBeGreaterThanOrEqual(AA)
   })
 })
 
