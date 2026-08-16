@@ -324,6 +324,195 @@ describe('--muted-foreground is readable on every surface it lands on', () => {
   })
 })
 
+/* ---------- the disabled state of the primary button ---------- */
+
+/**
+ * Every .btn-primary class list in the app that can actually be disabled, read
+ * out of the components instead of copied here.
+ *
+ * Copying the class list into the test would let the markup and the guard drift
+ * apart, which is the same shape of failure this file already exists to catch.
+ */
+const componentSources = import.meta.glob('./components/**/*.tsx', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+
+function disableablePrimaryButtons(): [file: string, classes: string][] {
+  return Object.entries(componentSources).flatMap(([file, source]) =>
+    [...source.matchAll(/['"]([^'"]*\bbtn-primary\b[^'"]*)['"]/g)]
+      .map((match) => match[1])
+      .filter((classes): classes is string => !!classes && classes.includes('disabled:'))
+      .map((classes): [string, string] => [file.replace('./components/', ''), classes])
+  )
+}
+
+/**
+ * Attach the compiled stylesheet to the document, render the button, and read
+ * back what the cascade actually settled on.
+ *
+ * This is the only assertion in this file that resolves a cascade rather than a
+ * value, and it has to, because the bug it guards was never about a value: both
+ * the gradient and the disabled fill were correct and both were present. Layer
+ * order decided between them. Reading either declaration on its own shows
+ * nothing wrong.
+ *
+ * jsdom does honour @layer here, which is what makes this work: given the
+ * unfixed stylesheet it reports the gradient, exactly as Chrome does. It does
+ * NOT substitute var(), so `background` comes back as the literal
+ * `var(--button-primary-disabled-bg)`. Assertions below accept either that or a
+ * resolved colour, so implementing var() in jsdom cannot turn this red.
+ */
+function computedButton(css: string, classes: string, isDisabled: boolean) {
+  document.head.replaceChildren()
+  document.body.replaceChildren()
+  const style = document.createElement('style')
+  style.textContent = css
+  document.head.appendChild(style)
+  const button = document.createElement('button')
+  button.className = classes
+  button.disabled = isDisabled
+  document.body.appendChild(button)
+  const computed = getComputedStyle(button)
+  return {
+    background: computed.background,
+    backgroundImage: computed.backgroundImage,
+    boxShadow: computed.boxShadow,
+  }
+}
+
+describe('a disabled .btn-primary actually renders disabled', () => {
+  /*
+   * .btn-primary is unlayered and Tailwind emits disabled:bg-* and
+   * disabled:shadow-none into @layer utilities, so for the whole life of the
+   * repo every disabled primary button kept the full orange gradient and the
+   * full lift shadow. Only disabled:text-* landed, because .btn-primary sets no
+   * color. A customer could not tell a dead button from a live one.
+   *
+   * The fix is .btn-primary:disabled in styles.css. These tests fail against
+   * the stylesheet as it shipped.
+   */
+  const buttons = disableablePrimaryButtons()
+  let css: string
+
+  beforeAll(async () => {
+    const compiler = await compile(stylesSource, { base: '/', loadStylesheet })
+    css = compiler.build(buttons.flatMap(([, classes]) => classes.split(/\s+/)))
+  })
+
+  it('finds the buttons it is meant to be guarding', () => {
+    expect(buttons.length).toBeGreaterThan(0)
+  })
+
+  it.each(buttons)('%s loses the gradient when disabled', (_file, classes) => {
+    const off = computedButton(css, classes, true)
+    expect(off.backgroundImage).not.toMatch(/gradient/)
+    expect(off.background).not.toMatch(/gradient/)
+  })
+
+  it.each(buttons)('%s paints the disabled fill when disabled', (_file, classes) => {
+    const { rgb } = parseColor(readToken('button-primary-disabled-bg'))
+    const { background } = computedButton(css, classes, true)
+    expect(
+      background.includes('button-primary-disabled-bg') ||
+        background.includes(`rgb(${rgb.join(', ')})`),
+      `background computed to ${background}`
+    ).toBe(true)
+  })
+
+  it.each(buttons)('%s loses the lift shadow when disabled', (_file, classes) => {
+    expect(computedButton(css, classes, true).boxShadow).toBe('none')
+  })
+
+  it.each(buttons)('%s keeps the gradient when enabled', (_file, classes) => {
+    // The other half of the guard: a fix that killed the gradient outright
+    // would satisfy every assertion above.
+    expect(computedButton(css, classes, false).backgroundImage).toMatch(/gradient/)
+  })
+})
+
+describe('a disabled primary button is legible and reads as not live', () => {
+  it('its label clears AA on the fill it sits on', () => {
+    /*
+     * WCAG 1.4.3 exempts disabled controls, so this is a deliberate choice
+     * rather than a rule. These labels are Continue, Derive, Sign, Load JSON
+     * and Broadcast: a customer has to be able to read what is blocked to work
+     * out how to unblock it, and the grey fill already carries the "off"
+     * signal on its own.
+     */
+    const fill = parseColor(readToken('button-primary-disabled-bg')).rgb
+    expect(contrastRatio(inkOn('button-primary-disabled-fg', fill), fill)).toBeGreaterThanOrEqual(
+      AA
+    )
+  })
+
+  it('its fill is grey where a live button is orange', () => {
+    /*
+     * The two states used to differ only in label colour, on the same orange.
+     * Now the fill does the work, so assert that: a live button is strongly
+     * chromatic, a dead one is flat grey. Measured as channel spread because
+     * that is what "the orange is gone" means numerically.
+     */
+    const chroma = (color: RGB) => Math.max(...color) - Math.min(...color)
+    expect(chroma(parseColor(readToken('button-primary-disabled-bg')).rgb)).toBe(0)
+    expect(Math.min(...gradientColorsOf('.btn-primary').map(chroma))).toBeGreaterThan(60)
+  })
+})
+
+/* ---------- foreground tokens ---------- */
+
+/**
+ * `--x-foreground` means "the ink for `--x`". Four of these shipped as the
+ * brand light #f3f3f3 over mid-brightness status fills, where they land at
+ * 2.12:1 to 4.12:1, and none of them had a single consumer. An unused token
+ * that is wrong is worse than no token: it reads as a sanctioned answer, so the
+ * first person to reach for one lands the exact defect .btn-primary just had.
+ * They are deleted.
+ *
+ * This guard is stricter than "delete the unused ones" and much simpler: every
+ * `--x-foreground` that exists must be readable on `--x`, consumer or not. That
+ * needs no consumer census to stay honest, and it fails the moment one of the
+ * four is reintroduced.
+ *
+ * Enumerating from the stylesheet is safe here, unlike SEMANTIC_COLOR_TOKENS
+ * above. That list asserts presence, so deriving it would shrink both sides at
+ * once. This asserts a measured ratio between two different tokens, so a new
+ * token can only add coverage and a deleted one cannot hide a defect.
+ */
+const FOREGROUND_FILL: Record<string, string> = {
+  // The page ink. The surface it names is the page.
+  foreground: 'background',
+}
+
+function foregroundTokens(): [token: string, fill: string][] {
+  const seen = new Set<string>()
+  const pairs: [string, string][] = []
+  for (const [, token] of stylesSource.matchAll(/^\s*--([\w-]*foreground):/gm)) {
+    // Skip the @theme registrations, which alias the tokens below rather than
+    // declaring a new colour.
+    if (!token || token.startsWith('color-') || seen.has(token)) continue
+    seen.add(token)
+    pairs.push([token, FOREGROUND_FILL[token] ?? token.replace(/-foreground$/, '')])
+  }
+  return pairs
+}
+
+describe('every -foreground token is readable on the fill it names', () => {
+  const pairs = foregroundTokens()
+
+  it('finds the tokens it is meant to be guarding', () => {
+    expect(pairs.length).toBeGreaterThan(0)
+  })
+
+  // readToken throws if the fill does not exist, so a --x-foreground without an
+  // --x fails here rather than passing quietly.
+  it.each(pairs)('--%s clears AA on --%s', (token, fill) => {
+    const bg = parseColor(readToken(fill)).rgb
+    expect(contrastRatio(inkOn(token, bg), bg)).toBeGreaterThanOrEqual(AA)
+  })
+})
+
 describe('the bright tokens stay fills, which is why the -text pairs exist', () => {
   /*
    * Each of these is doing a non-text job: banner tints, card borders, and the

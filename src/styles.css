@@ -142,11 +142,26 @@ pre,
   /* Buttons */
   --button-primary-hover: #df600d;
   --button-primary-disabled-bg: #d9d9d9;
-  --button-primary-disabled-fg: rgba(21, 21, 21, 0.4);
+  /* The label on a disabled primary button. It was 0.4, which paints rgb(139)
+     on the #d9d9d9 fill above: 2.41:1, and unreadable. That alpha was picked
+     against a grey fill that never actually rendered, because the disabled
+     background lost to the unlayered gradient (see .btn-primary:disabled), so
+     nobody ever saw the pairing it was tuned for.
+
+     Disabled controls are exempt from WCAG 1.4.3, so 2.41:1 was not a
+     violation. It is still the wrong call here: these labels are Continue,
+     Derive, Sign, Load JSON and Broadcast, and a customer has to be able to
+     read what is blocked to work out how to unblock it.
+
+     0.62 paints rgb(95) and clears AA at 4.52:1. It costs nothing, because the
+     flat grey fill is what signals "off", not the ink: the enabled button is a
+     saturated orange gradient with a lift shadow. It is also the alpha
+     --text-muted already uses, so this reuses a value the app has settled on
+     rather than inventing a second one. */
+  --button-primary-disabled-fg: rgba(21, 21, 21, 0.62);
 
   /* Status */
   --destructive: #f04438;
-  --destructive-foreground: #f3f3f3;
   --destructive-bg: rgba(240, 68, 56, 0.1);
   /* Readable error text, and every error message in this tool is one. Same
      split as --warning-text: --destructive stays the fill/border/icon red,
@@ -155,21 +170,18 @@ pre,
      This is red-700, 5.72:1 on the banner and 6.53:1 on the card. */
   --destructive-text: #b42318;
   --success: #12b76a;
-  --success-foreground: #f3f3f3;
   --success-bg: rgba(16, 140, 64, 0.1);
   /* Readable success text. --success is a fill/border/icon green: as copy on
      bg-success/10 it is 2.36:1, the worst of the three. This is green-700,
      5.28:1 on the tint and 5.81:1 on the card. */
   --success-text: #087443;
   --warning: #f79009;
-  --warning-foreground: #f3f3f3;
   --warning-bg: rgba(247, 144, 9, 0.1);
   /* Readable warning text. --warning is a fill/border/icon colour: at 2.16:1 on
      --warning-bg it is unreadable as body copy. This is amber-800, which is
      6.52:1 on --warning-bg and 7.09:1 on white. Use it for any warning TEXT. */
   --warning-text: #92400e;
   --info: #1570ef;
-  --info-foreground: #f3f3f3;
 
   /* Step indicator */
   --step-inactive-bg: #ececec;
@@ -491,6 +503,31 @@ button {
   box-shadow:
     0 1px 3px rgba(254, 121, 33, 0.2),
     0 1px 1px rgba(0, 0, 0, 0.1);
+}
+
+/* Disabled state. This rule has to exist, and it has to live here rather than
+   in the markup, because of cascade layers.
+
+   .btn-primary is unlayered. Tailwind v4 emits every utility inside
+   @layer utilities, and an unlayered declaration beats a layered one whatever
+   the specificity: layer order is settled before specificity is ever consulted.
+   So the six buttons that carry disabled:bg-[...] and disabled:shadow-none
+   rendered with the full orange gradient and the full lift shadow while
+   disabled, for the whole life of the repo. Only disabled:text-[...] landed,
+   because .btn-primary sets no color and so nothing outranked it.
+
+   The result was a disabled button that looked live, in the one tool a customer
+   opens when BTCBacked no longer exists.
+
+   `background` is the shorthand on purpose: it clears background-image, which is
+   where the gradient lives. Setting background-color alone would leave the
+   gradient painted on top of it. Any property .btn-primary sets above and that
+   the off state needs to drop has to be reset here too.
+
+   styles.theme.test.ts renders this for real and asserts the computed value. */
+.btn-primary:disabled {
+  background: var(--button-primary-disabled-bg);
+  box-shadow: none;
 }
 
 /* Outline button — border animation on hover */
