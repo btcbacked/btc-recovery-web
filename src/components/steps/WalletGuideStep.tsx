@@ -86,7 +86,7 @@ export function WalletGuideStep({
       {descriptorHasPrivateKey && (
         <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-          <p className="text-xs text-warning">
+          <p className="text-xs text-warning-text">
             <strong>Keep this secret.</strong> This configuration contains your signing key in
             plain text. Anyone who gets it can spend your Bitcoin.
           </p>
@@ -209,7 +209,7 @@ export function WalletGuideStep({
           aria-labelledby={tabId('Bitcoin Core')}
           hidden={activeTab !== 'Bitcoin Core'}
         >
-          <div className="mb-4 rounded-[var(--radius-base)] border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+          <div className="mb-4 rounded-[var(--radius-base)] border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-text">
             <strong>Advanced users only.</strong> This needs a fully synced Bitcoin Core node
             and the console. If that is not familiar, use Sparrow instead. Bitcoin Core is the
             only one of these that always honours the configuration exactly as written.

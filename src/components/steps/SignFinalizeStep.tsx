@@ -100,7 +100,7 @@ export function SignFinalizeStep({
             </h2>
           </div>
           <div className="rounded-[var(--radius-base)] border border-destructive/20 bg-destructive/10 px-4 py-3">
-            <p className="text-sm text-destructive">{error}</p>
+            <p className="text-sm text-destructive-text">{error}</p>
           </div>
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <button
@@ -144,7 +144,7 @@ export function SignFinalizeStep({
           <div className="rounded-[var(--radius-base)] border border-success/20 bg-success/5 px-4 py-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Signature status</span>
-              <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-semibold text-success">
+              <span className="rounded-full bg-success/10 px-2.5 py-1 text-xs font-semibold text-success-text">
                 {sigCount} of {analysis.requiredSignatures}, fully signed
               </span>
             </div>
@@ -191,7 +191,7 @@ export function SignFinalizeStep({
           <div className="rounded-[var(--radius-base)] border border-border bg-accent/50 px-4 py-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground">Signature status</span>
-              <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
+              <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning-text">
                 {sigCount} of {analysis.requiredSignatures}
               </span>
             </div>

@@ -8,6 +8,11 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: 'jsdom',
+    // Vitest replaces CSS imports with empty strings by default, including
+    // `?raw` ones. styles.theme.test.ts reads both of these files as text to
+    // compile them with Tailwind, so they have to be exempt. Scoped to these
+    // two files so every other CSS import stays stubbed.
+    css: { include: [/src[\\/]styles\.css/, /tailwindcss[\\/]index\.css/] },
     globals: true,
     coverage: {
       provider: 'v8',

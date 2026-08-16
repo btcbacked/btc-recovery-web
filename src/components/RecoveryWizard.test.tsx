@@ -38,7 +38,21 @@ function descriptorWith(childSuffixes: [string, string, string]): string {
 
 const MODERN_DESCRIPTOR = descriptorWith(['/0/*', '/0/*', '/0/*'])
 
-function recoveryJson(overrides: { keySource?: string; outputDescriptor?: string } = {}): string {
+/**
+ * `derivationPath` carries the leading `m/` and the descriptor bracket does
+ * not, which is what the backend writes into every real recovery file: it
+ * stores the path through a normaliser that adds `m/`, and strips `^m/` when
+ * building the bracket. Every wizard test therefore runs against a file in the
+ * production shape, so a path check that compares the two fields as plain
+ * strings cannot pass this suite. Do not "tidy" the `m/` away.
+ */
+function recoveryJson(
+  overrides: {
+    keySource?: string
+    outputDescriptor?: string
+    derivationPath?: string
+  } = {},
+): string {
   return JSON.stringify({
     version: 1,
     network: 'testnet',
@@ -46,7 +60,7 @@ function recoveryJson(overrides: { keySource?: string; outputDescriptor?: string
     context: { contractId: 'contract-1', role: 'borrower', threshold: 2, totalKeys: 3 },
     userKey: {
       keySource: overrides.keySource ?? 'COLD_CARD',
-      derivationPath: "48'/1'/0'/2'",
+      derivationPath: overrides.derivationPath ?? "m/48'/1'/0'/2'",
       xpub: xpubs[1],
       fingerprint: 'BBBBBBBB',
     },
@@ -221,6 +235,120 @@ describe('hardware path — descriptor this tool cannot reproduce', () => {
 
     await screen.findByText(EXPECTED_ADDRESS)
     expect(screen.queryByText(/Do not rely on the address or balance below/i)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The derivation path in the file against the one in the file's own descriptor
+//
+// Neither key check can see this: both compare key material, so a file whose
+// bracket names a different path passes every check the tool makes. It is a
+// warning and never a refusal, because the address, the balance and the
+// signature are all unaffected. The one thing that reads the path is a wallet
+// or device registering the key.
+// ---------------------------------------------------------------------------
+
+describe('derivation path recorded against the descriptor', () => {
+  const WARNING = /derivation path this recovery file records/i
+
+  /** The user's leg moved onto a branch the recorded path does not name. */
+  const STALE_BRACKET = MODERN_DESCRIPTOR.replace(
+    `[${fps[1]}/48'/1'/0'/2']`,
+    `[${fps[1]}/48'/1'/0'/2'/0/9]`,
+  )
+
+  function passwordJson(derivationPath: string, outputDescriptor: string): string {
+    return JSON.stringify({
+      version: 1,
+      network: 'testnet',
+      outputDescriptor,
+      context: { contractId: 'c', role: 'lender', threshold: 2, totalKeys: 3 },
+      userKey: {
+        keySource: 'PASSWORD',
+        derivationProfile: 'pbkdf2-v1',
+        salt: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
+        derivationPath,
+        xpub: xpubs[1],
+        fingerprint: 'BBBBBBBB',
+      },
+    })
+  }
+
+  it('says nothing about a file in the shape the platform writes', async () => {
+    // The recorded path carries an `m/` and the bracket does not, which is
+    // every real file. Comparing the two as strings reports all of them.
+    loadFile(recoveryJson())
+    confirmInfo()
+
+    await screen.findByText(EXPECTED_ADDRESS)
+    expect(screen.queryByText(WARNING)).toBeNull()
+  })
+
+  it('warns on the device screen when the two paths disagree', async () => {
+    loadFile(recoveryJson({ outputDescriptor: STALE_BRACKET }))
+    confirmInfo()
+
+    const warning = await screen.findByText(WARNING)
+    expect(warning.textContent).toContain("m/48'/1'/0'/2'")
+    expect(warning.textContent).toContain("48'/1'/0'/2'/0/9")
+  })
+
+  it('warns and lets a device user carry on to the address and the guide', async () => {
+    loadFile(recoveryJson({ outputDescriptor: STALE_BRACKET }))
+    confirmInfo()
+
+    // Warned about, not stopped: the escrow address is still derived and the
+    // import instructions are still reachable.
+    await screen.findByText(WARNING)
+    expect(
+      screen.getByRole('button', { name: /View Import Instructions/i }),
+    ).toBeTruthy()
+  })
+
+  it('warns before the password is typed, and still asks for it', async () => {
+    loadFile(passwordJson("m/48'/1'/0'/2'", STALE_BRACKET))
+    confirmInfo()
+
+    await screen.findByText(WARNING)
+    // The password path is open. A hard stop here would turn a fully
+    // recoverable file into a dead end.
+    const input = screen.getByPlaceholderText(/Enter your escrow password/i)
+    expect((input as HTMLInputElement).disabled).toBe(false)
+    expect(screen.getByRole('button', { name: /Recover Key/i })).toBeTruthy()
+  })
+
+  it('does not warn on a password file in the platform shape', () => {
+    loadFile(passwordJson("m/48'/1'/0'/2'", MODERN_DESCRIPTOR))
+    confirmInfo()
+
+    expect(screen.getByPlaceholderText(/Enter your escrow password/i)).toBeTruthy()
+    expect(screen.queryByText(WARNING)).toBeNull()
+  })
+
+  it('holds the warning back until the file details are confirmed', () => {
+    loadFile(recoveryJson({ outputDescriptor: STALE_BRACKET }))
+
+    expect(screen.queryByText(WARNING)).toBeNull()
+  })
+
+  it('does not carry one file warning onto the next file', async () => {
+    // The tool tells people holding more than one copy of their recovery file
+    // to open each one here, so this walk is the expected one.
+    loadFile(recoveryJson({ outputDescriptor: STALE_BRACKET }))
+    confirmInfo()
+    await screen.findByText(WARNING)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Back$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Upload a different file/i }))
+    fireEvent.click(screen.getByRole('button', { name: /paste the JSON directly/i }))
+    fireEvent.change(screen.getByPlaceholderText(/Paste your recovery file JSON here/i), {
+      target: { value: recoveryJson() },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Load JSON/i }))
+    confirmInfo()
+
+    await screen.findByText(EXPECTED_ADDRESS)
+    expect(screen.queryByText(WARNING)).toBeNull()
   })
 })
 

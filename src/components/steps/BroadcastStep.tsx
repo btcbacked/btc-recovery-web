@@ -113,7 +113,7 @@ export function BroadcastStep({
 
           <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-            <p className="text-xs text-warning">
+            <p className="text-xs text-warning-text">
               <strong>Before broadcasting,</strong> check{' '}
               {network !== 'regtest' && (
                 <a
@@ -211,7 +211,7 @@ export function BroadcastStep({
           </div>
 
           <div className="rounded-[var(--radius-base)] border border-destructive/20 bg-destructive/10 px-4 py-3">
-            <p className="text-sm text-destructive">{friendlyError}</p>
+            <p className="text-sm text-destructive-text">{friendlyError}</p>
           </div>
 
           {/* Mempool check warning before retry */}

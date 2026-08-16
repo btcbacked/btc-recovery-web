@@ -51,7 +51,7 @@ export function UploadStep({ onFileLoaded }: UploadStepProps) {
       <FileDropZone onFileContent={processContent} />
 
       {error && (
-        <div className="rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+        <div className="rounded-[var(--radius-base)] bg-destructive/10 px-4 py-3 text-sm text-destructive-text" role="alert">
           {error}
         </div>
       )}

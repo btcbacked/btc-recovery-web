@@ -2,8 +2,8 @@ import { cn } from '@/lib/utils'
 import type { Network } from '@/crypto'
 
 const networkStyles: Record<Network, string> = {
-  mainnet: 'bg-success/10 text-success',
-  testnet: 'bg-warning/10 text-warning',
+  mainnet: 'bg-success/10 text-success-text',
+  testnet: 'bg-warning/10 text-warning-text',
   regtest: 'bg-muted text-muted-foreground',
   signet: 'bg-info/10 text-info',
 }

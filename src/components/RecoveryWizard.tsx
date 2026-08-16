@@ -23,7 +23,9 @@ import { useDerivation } from '@/hooks/useDerivation'
 import { useWalletState } from '@/hooks/useWalletState'
 import { usePsbtWorkflow } from '@/hooks/usePsbtWorkflow'
 import { useNetworkConfig } from '@/hooks/useNetworkConfig'
+import { AlertTriangle } from 'lucide-react'
 import { parseDescriptor, usesStandardChildDerivation } from '@/crypto/descriptor-parser'
+import { originPathWarning } from '@/crypto/origin-path'
 import { deriveMultisigAddress } from '@/crypto/address'
 import { withChecksum } from '@/crypto/descriptor'
 import { isPasswordKeySource } from '@/crypto/recovery-file'
@@ -62,7 +64,7 @@ class WizardErrorBoundary extends Component<{ children: ReactNode }, ErrorBounda
     if (this.state.hasError) {
       return (
         <div className="space-y-4 text-center">
-          <p className="text-sm font-medium text-destructive">Something went wrong</p>
+          <p className="text-sm font-medium text-destructive-text">Something went wrong</p>
           <p className="text-xs text-muted-foreground">{this.state.message}</p>
           <button
             type="button"
@@ -96,7 +98,7 @@ export function RecoveryWizard() {
 
   // Destructure stable setters
   const {
-    setRecoveryFile, setStep, setPasswordError,
+    setRecoveryFile, setStep, setPasswordError, setOriginPathWarning,
     setDescriptor, setXprv, setParsedDescriptor, reset,
   } = wizard
 
@@ -125,6 +127,15 @@ export function RecoveryWizard() {
 
   const handleInfoConfirm = useCallback(() => {
     if (!wizard.recoveryFile) return
+
+    // The one thing neither key check can see. Both of them compare key
+    // material, so a file whose descriptor bracket names a different path from
+    // `userKey.derivationPath` passes every check the tool makes. It is settled
+    // here because it is a property of the file alone, so it is known before a
+    // password is worth typing, and it runs for a device held key too: a device
+    // is what reads the path, which makes that the population it helps most.
+    setOriginPathWarning(originPathWarning(wizard.recoveryFile))
+
     if (isPasswordKeySource(wizard.recoveryFile.userKey.keySource)) {
       setStep('password')
       return
@@ -138,7 +149,7 @@ export function RecoveryWizard() {
       // Non-fatal. The descriptor is still shown and can be imported by hand.
     }
     setStep('hardware')
-  }, [wizard.recoveryFile, setStep, setParsedDescriptor])
+  }, [wizard.recoveryFile, setStep, setParsedDescriptor, setOriginPathWarning])
 
   const handlePasswordSubmit = useCallback(
     async (password: string) => {
@@ -386,6 +397,16 @@ export function RecoveryWizard() {
   const descriptorHasPrivateKey =
     wizard.parsedDescriptor?.keys.some((k) => k.isPrivate) ?? false
 
+  // Shown on the three screens where the path is about to matter: before the
+  // password is typed, on the device screen, and on the screen that hands over
+  // the descriptor. It is deliberately not shown on the transaction screens,
+  // where it changes nothing and would only crowd out what does.
+  const showOriginPathWarning =
+    wizard.originPathWarning !== null &&
+    (wizard.step === 'password' ||
+      wizard.step === 'hardware' ||
+      wizard.step === 'result')
+
   return (
     <div className="space-y-8">
       <div className="flex justify-center">
@@ -403,6 +424,16 @@ export function RecoveryWizard() {
         className="glass-card rounded-[var(--radius-surface)] border p-6 md:p-8"
         style={{ boxShadow: 'var(--auth-card-glow)' }}
       >
+        {showOriginPathWarning && (
+          <div
+            role="status"
+            className="mb-6 flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3"
+          >
+            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+            <p className="text-sm text-warning-text">{wizard.originPathWarning}</p>
+          </div>
+        )}
+
         <WizardErrorBoundary>
           {wizard.step === 'upload' && (
             <div key="upload" className="animate-step-enter">

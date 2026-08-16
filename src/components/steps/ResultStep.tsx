@@ -73,7 +73,7 @@ export function ResultStep({ descriptor, onContinue }: ResultStepProps) {
       {/* Security warning */}
       <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-        <p className="text-xs text-warning">
+        <p className="text-xs text-warning-text">
           <strong>Keep this secret.</strong> This descriptor contains your private signing
           key in plain text. Anyone who obtains it can spend your Bitcoin. Do not share it,
           screenshot it, or store it in an insecure location. Treat it like a seed phrase.

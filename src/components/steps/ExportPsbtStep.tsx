@@ -35,7 +35,7 @@ export function ExportPsbtStep({
       {psbtError && (
         <div className="flex items-start gap-2 rounded-[var(--radius-base)] border border-destructive/20 bg-destructive/10 px-4 py-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-          <p className="text-sm text-destructive">{psbtError}</p>
+          <p className="text-sm text-destructive-text">{psbtError}</p>
         </div>
       )}
 
@@ -56,7 +56,7 @@ export function ExportPsbtStep({
       <div className="rounded-[var(--radius-base)] border border-border bg-accent/50 px-4 py-3">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">Signature status</span>
-          <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning">
+          <span className="rounded-full bg-warning/10 px-2.5 py-1 text-xs font-semibold text-warning-text">
             {sigCount} of {analysis.requiredSignatures} signatures
           </span>
         </div>

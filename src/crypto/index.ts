@@ -17,6 +17,7 @@ export { getBitcoinNetwork, getMempoolApiBase } from './networks'
 
 // Descriptor parser
 export { parseDescriptor, findUserKey, usesStandardChildDerivation } from './descriptor-parser'
+export { originPathWarning } from './origin-path'
 export type { ParsedDescriptor, ParsedKeyEntry } from './descriptor-parser'
 
 // Address derivation
