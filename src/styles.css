@@ -114,7 +114,15 @@ pre,
   --popover: #ffffff;
   --popover-foreground: var(--foreground);
   --primary: #fe7921;
-  --primary-foreground: #f3f3f3;
+  /* The label on every orange fill in this tool: all 19 .btn-primary buttons
+     (Continue, Derive, Sign, Broadcast, Copy) and the StepIndicator's current
+     step. It was the brand light #f3f3f3, which is 2.09:1 on the rest
+     gradient's lightest stop and 1.97:1 on the hover one. Both are brand
+     colours and the pair was simply the wrong way round: the brand dark is
+     5.06:1 at the worst stop of any state and 8.37:1 at the best, so the
+     orange is untouched and the label is the only thing that moved.
+     styles.theme.test.ts measures this against the real gradient. */
+  --primary-foreground: #151515;
   /* Readable brand text. --primary is the fill/border/icon orange: as copy on
      bg-primary/10 it is 2.38:1. This is 4.90:1 there and 5.39:1 on the card.
      One site uses it, the selected fee preset label. */
