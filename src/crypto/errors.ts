@@ -70,6 +70,44 @@ export const KEY_MISMATCH_INCONSISTENT_FILE =
   'Bitcoin.\n\n' +
   KEY_MISMATCH_NEXT_STEPS
 
+/**
+ * The refusal, in the words that were approved for it.
+ *
+ * Exported rather than written at the throw site because this is what reaches
+ * a customer, and copy that only exists as a literal inside a `catch` cannot be
+ * reviewed or tested. `useWalletState` renders a `RecoveryError`'s
+ * `userMessage` verbatim, so any throw on the refusal path that does not carry
+ * this carries its own technical wording onto the screen instead.
+ *
+ * Wording rules, all deliberate: plain words only, no dashes, nothing that
+ * implies BTCBacked holds or controls the key or the funds, nothing that makes
+ * support the customer's next step, and no referral to anyone else.
+ *
+ * Split in two only because the screen bolds the first sentence and a thrown
+ * error cannot. `ESCROW_UNSUPPORTED` is built from the halves rather than
+ * written out again, so the sentence a customer reads in the notice and the
+ * sentence a customer reads from a `RecoveryError` cannot drift apart. Nothing
+ * outside this file should assemble its own version of either half.
+ */
+export const ESCROW_UNSUPPORTED_HEADLINE = 'This page cannot open this escrow.'
+
+/**
+ * Everything after the headline, and the half that carries the promise.
+ *
+ * It says the file was set up in a way this page does not handle, and that is
+ * true of all three refusal causes, the unreadable descriptor included: a file
+ * this page cannot read is a file set up in a way this page does not handle.
+ * Naming the cause more precisely was considered and rejected, because the
+ * three causes are one fact to the customer and this wording is the one that
+ * was approved.
+ */
+export const ESCROW_UNSUPPORTED_BODY =
+  'Your recovery file was set up in a way this page does not handle, so it ' +
+  'will not show you an address. Your Bitcoin has not moved and your key is ' +
+  'still yours.'
+
+export const ESCROW_UNSUPPORTED = `${ESCROW_UNSUPPORTED_HEADLINE} ${ESCROW_UNSUPPORTED_BODY}`
+
 export const ERROR_MESSAGES: Record<RecoveryErrorCode, string> = {
   INVALID_JSON:
     'This file does not contain valid JSON. Please check that you uploaded the correct recovery file.',

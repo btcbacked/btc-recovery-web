@@ -20,8 +20,16 @@ export { parseDescriptor, findUserKey, usesStandardChildDerivation } from './des
 export { originPathWarning } from './origin-path'
 export type { ParsedDescriptor, ParsedKeyEntry } from './descriptor-parser'
 
+// Per key child derivation: the one resolver every derivation site shares
+export {
+  childIndices,
+  childPathSuffix,
+  deriveChildNode,
+  RANGED_CHILD_DERIVATION,
+} from './child-derivation'
+
 // Address derivation
-export { deriveMultisigAddress, deriveMultisigAddresses } from './address'
+export { deriveMultisigAddress } from './address'
 export type { DerivedAddress } from './address'
 
 // Blockchain API

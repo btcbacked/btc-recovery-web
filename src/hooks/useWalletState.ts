@@ -23,7 +23,10 @@ export function useWalletState() {
     setIsLoading(true)
     setError(null)
     try {
-      // Derive address at index 0 (escrow contracts use single address)
+      // An escrow is a single address, so index 0 is the only one to query.
+      // That is not the same as assuming child index 0: deriveMultisigAddress
+      // resolves each key's own child derivation, so a leg pinned to /0/1
+      // contributes its pinned key and ignores this index entirely.
       const addr = deriveMultisigAddress(parsedDescriptor, 0, network)
       setAddresses([addr])
 

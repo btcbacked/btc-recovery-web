@@ -36,22 +36,26 @@ export function ActionChoiceStep({
         </p>
       </div>
 
-      {/* Escrow address preview */}
-      <div className="rounded-[var(--radius-base)] border border-border bg-accent/50 px-4 py-3">
-        <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Escrow Address ({network})
-        </p>
-        <div className="flex items-center justify-between gap-3">
-          <code className="flex-1 truncate font-mono text-xs text-foreground">
-            {truncateHash(escrowAddress, 12)}
-          </code>
-          <CopyButton
-            text={escrowAddress}
-            label="Copy"
-            className="shrink-0 px-3 py-1.5 text-xs"
-          />
+      {/* Escrow address preview. Absent when no address could be derived: an
+          empty box with a Copy button that copies nothing reads as an address
+          that happens to be short, which is worse than showing none. */}
+      {escrowAddress !== '' && (
+        <div className="rounded-[var(--radius-base)] border border-border bg-accent/50 px-4 py-3">
+          <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Escrow Address ({network})
+          </p>
+          <div className="flex items-center justify-between gap-3">
+            <code className="flex-1 truncate font-mono text-xs text-foreground">
+              {truncateHash(escrowAddress, 12)}
+            </code>
+            <CopyButton
+              text={escrowAddress}
+              label="Copy"
+              className="shrink-0 px-3 py-1.5 text-xs"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Regtest custom endpoint */}
       {needsCustomEndpoint && (
