@@ -8,7 +8,13 @@ import type { ParsedDescriptor } from '@/crypto/descriptor-parser'
 import type { Network } from '@/crypto'
 
 type WalletViewStepProps = {
-  parsedDescriptor: ParsedDescriptor
+  /**
+   * Null when the recovery file's descriptor could not be parsed at all, which
+   * is one of the ways `cannotDeriveEscrow` becomes true. The wizard renders
+   * this step on the file alone, so that case has to arrive here rather than be
+   * kept out: kept out, it rendered no step at all and stranded the customer.
+   */
+  parsedDescriptor: ParsedDescriptor | null
   network: Network
   apiBaseUrl: string
   addresses: DerivedAddress[]
@@ -16,6 +22,16 @@ type WalletViewStepProps = {
   balance: number
   isLoading: boolean
   error: string | null
+  /**
+   * True when no escrow address could be worked out from the recovery file.
+   *
+   * Wider than `parsedDescriptor === null`, and that is the point. On the most
+   * common refusal the descriptor parsed perfectly well and
+   * `deriveMultisigAddress` then refused it, so without this flag the step
+   * mounts, asks for a balance it cannot have, and turns the refusal into a
+   * failure report with a Retry button that can never succeed.
+   */
+  cannotDeriveEscrow: boolean
   onLoadWallet: (parsed: ParsedDescriptor, network: Network, apiBase: string) => void
   onCreateTransaction: () => void
   onBack: () => void
@@ -30,6 +46,7 @@ export function WalletViewStep({
   balance,
   isLoading,
   error,
+  cannotDeriveEscrow,
   onLoadWallet,
   onCreateTransaction,
   onBack,
@@ -37,9 +54,44 @@ export function WalletViewStep({
   const escrowAddress = addresses[0]?.address ?? null
 
   useEffect(() => {
+    // Nothing to load without an address, and asking anyway is not harmless:
+    // the derivation throws again inside `loadWallet`, which is what put the
+    // failure box on this screen in the first place.
+    if (cannotDeriveEscrow || parsedDescriptor === null) return
     onLoadWallet(parsedDescriptor, network, apiBaseUrl)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /*
+   * The refusal, which owns this whole screen when it happens.
+   *
+   * The wizard already renders one calm explanation above this step, so this
+   * step adds nothing to it. Everything the ordinary screen would show is
+   * false here and reads worse the further down it goes: a red "Failed to Load
+   * Wallet" box directly under the calm alert, a Retry that repeats a
+   * derivation which is exact and will refuse again, and, at the bottom, an
+   * instruction to send Bitcoin to the escrow address this page has just
+   * refused to show.
+   *
+   * Back stays. It is the only way off this screen, it goes somewhere that
+   * works, and it is navigation rather than a second account of what happened.
+   * It is also why the null descriptor is folded into this same branch: the
+   * customer has to leave with a button, not with a card that drew nothing.
+   */
+  if (cannotDeriveEscrow || parsedDescriptor === null) {
+    return (
+      <div className="flex">
+        <button
+          type="button"
+          onClick={onBack}
+          className="btn-outline inline-flex items-center justify-center gap-2 rounded-[var(--radius-cta)] border border-border px-5 py-2.5 text-sm font-medium text-foreground hover:bg-accent"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Back
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

@@ -14,8 +14,9 @@ import { RecoveryWizard } from './RecoveryWizard'
 import { bitcoin, ecc } from '@/crypto/bitcoin-lib'
 import { parseDescriptor } from '@/crypto/descriptor-parser'
 import { deriveMultisigAddress } from '@/crypto/address'
-import { deriveSeed, computeFingerprint } from '@/crypto/derivation'
+import { deriveSeed, computeFingerprint, deriveXprv, neuterXprv } from '@/crypto/derivation'
 import { getProfile } from '@/crypto/profiles'
+import { ESCROW_UNSUPPORTED } from '@/crypto/errors'
 
 // bitcoinjs-lib and bip32 expect a global Buffer, which main.tsx normally supplies.
 ;(globalThis as unknown as { Buffer: typeof Buffer }).Buffer = Buffer
@@ -98,14 +99,19 @@ function stubFetch(utxos: unknown = UTXOS) {
   )
 }
 
-/** Drive the wizard from upload to the hardware step. */
-function loadFile(json: string) {
-  render(<RecoveryWizard />)
+/** Paste a file into a wizard that is already mounted and sitting on upload. */
+function pasteFile(json: string) {
   fireEvent.click(screen.getByRole('button', { name: /paste the JSON directly/i }))
   fireEvent.change(screen.getByPlaceholderText(/Paste your recovery file JSON here/i), {
     target: { value: json },
   })
   fireEvent.click(screen.getByRole('button', { name: /Load JSON/i }))
+}
+
+/** Drive the wizard from upload to the hardware step. */
+function loadFile(json: string) {
+  render(<RecoveryWizard />)
+  pasteFile(json)
 }
 
 function confirmInfo() {
@@ -215,18 +221,46 @@ describe('hardware path — escrow address and balance', () => {
 })
 
 // ---------------------------------------------------------------------------
-// A descriptor this tool cannot reproduce must not be presented as checkable
+// An escrow other wallet software will disagree with
+//
+// The keys are pinned to fixed children rather than ranged, so this tool's
+// address is right and most wallet apps will show a different one. The old copy
+// here said "Do not rely on the address or balance below", which was the
+// opposite of true and is why these assertions changed: the address below is
+// exactly what the customer should rely on.
 // ---------------------------------------------------------------------------
 
-describe('hardware path — descriptor this tool cannot reproduce', () => {
-  const PINNED = descriptorWith(['/0/3', '/0/5', '/0/9'])
+const NOTICE = /Your Bitcoin is safe and this page has the right address for it/i
+const REFUSAL = /This page cannot open this escrow/i
 
-  it('warns instead of presenting the address as something to check against', async () => {
+describe('an escrow other wallet software will disagree with', () => {
+  const PINNED = descriptorWith(['/0/3', '/0/5', '/0/9'])
+  const PINNED_ADDRESS = deriveMultisigAddress(parseDescriptor(PINNED), 0, 'testnet').address
+
+  it('tells the customer this page has the right address, not that the address is doubtful', async () => {
     loadFile(recoveryJson({ outputDescriptor: PINNED }))
     confirmInfo()
 
-    expect(await screen.findByText(/Do not rely on the address or balance below/i)).toBeTruthy()
+    expect(await screen.findByText(NOTICE)).toBeTruthy()
+    // The check-it-against-your-wallet line is the one thing that would be
+    // false here, and it is the one thing that must not render.
     expect(screen.queryByText(/must show this exact address/i)).toBeNull()
+  })
+
+  it('still shows the address and the balance, because both are correct', async () => {
+    loadFile(recoveryJson({ outputDescriptor: PINNED }))
+    confirmInfo()
+
+    expect(await screen.findByText(PINNED_ADDRESS)).toBeTruthy()
+    expect(await screen.findByText('Total Balance')).toBeTruthy()
+  })
+
+  it('says it once on a screen whose escrow summary already carries it', async () => {
+    loadFile(recoveryJson({ outputDescriptor: PINNED }))
+    confirmInfo()
+
+    await screen.findByText(PINNED_ADDRESS)
+    expect(screen.getAllByText(NOTICE)).toHaveLength(1)
   })
 
   it('does not warn for a normal descriptor', async () => {
@@ -234,7 +268,390 @@ describe('hardware path — descriptor this tool cannot reproduce', () => {
     confirmInfo()
 
     await screen.findByText(EXPECTED_ADDRESS)
-    expect(screen.queryByText(/Do not rely on the address or balance below/i)).toBeNull()
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+
+  it('does not tell the customer a difference means calling support, having just predicted one', async () => {
+    loadFile(recoveryJson({ outputDescriptor: PINNED }))
+    confirmInfo()
+    await screen.findByText(NOTICE)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    const card = screen.getByRole('tablist').parentElement
+    expect(card?.textContent).not.toMatch(/contact BTCBacked support/i)
+    expect(card?.textContent).toMatch(/this wallet cannot open your escrow/i)
+    expect(card?.textContent).toMatch(/Nothing is wrong with your funds/i)
+  })
+
+  it('still sends an ordinary escrow to support when the numbers disagree', async () => {
+    loadFile(recoveryJson())
+    confirmInfo()
+    await screen.findByText(EXPECTED_ADDRESS)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    const card = screen.getByRole('tablist').parentElement
+    expect(card?.textContent).toMatch(/contact BTCBacked support/i)
+    expect(card?.textContent).not.toMatch(/this wallet cannot open your escrow/i)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The pinned-escrow notice on the screens that have no escrow summary
+//
+// `hardware` and `guide` render an `EscrowSummary`, which carries its own copy
+// of the notice. Every OTHER screen depends on the wizard rendering it at card
+// level, and that branch had no test: every pinned-escrow test above stops at
+// one of the two screens that never needed the fix. A pinned escrow walking on
+// to `result` or `action-choice` could have gone silent without one failure.
+//
+// Reaching those screens needs the password path, because the device path goes
+// straight from `hardware` to `guide` and never touches either.
+// ---------------------------------------------------------------------------
+
+describe('the pinned-escrow notice past the screens that carry their own', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const SALT = 'b2c3d4e5f60718293a4b5c6d7e8f9012'
+  const ACCOUNT_PATH = "m/48'/1'/0'/2'"
+
+  let pinnedJson = ''
+  let pinnedAddress = ''
+
+  beforeAll(async () => {
+    const profile = getProfile('pbkdf2-v1')
+    if (!profile) throw new Error('pbkdf2-v1 profile is missing')
+
+    const seed = await deriveSeed(PASSWORD, SALT, profile)
+    const userXprv = deriveXprv(seed, ACCOUNT_PATH, 'testnet')
+    const userXpub = neuterXprv(userXprv, 'testnet')
+    const fingerprint = computeFingerprint(seed, 'testnet')
+
+    // The customer's own leg is pinned to a fixed child, the other two range.
+    // Supported, so an address IS derived and it is the right one. What makes
+    // it worth saying is that other wallet software will not find it.
+    const pinnedDescriptor =
+      `wsh(sortedmulti(2,[${fingerprint}/48'/1'/0'/2']${userXpub}/0/1,` +
+      `[${fps[0]}/48'/1'/0'/2']${xpubs[0]}/0/*,` +
+      `[${fps[2]}/48'/1'/0'/2']${xpubs[2]}/0/*))`
+
+    pinnedAddress = deriveMultisigAddress(
+      parseDescriptor(pinnedDescriptor),
+      0,
+      'testnet',
+    ).address
+
+    pinnedJson = JSON.stringify({
+      version: 1,
+      network: 'testnet',
+      outputDescriptor: pinnedDescriptor,
+      context: { contractId: 'c', role: 'borrower', threshold: 2, totalKeys: 3 },
+      userKey: {
+        keySource: 'PASSWORD',
+        derivationProfile: 'pbkdf2-v1',
+        salt: SALT,
+        derivationPath: ACCOUNT_PATH,
+        xpub: userXpub,
+        fingerprint,
+      },
+    })
+  }, 30_000)
+
+  /** Password, then the screen that hands back the rebuilt key. */
+  async function reachResult() {
+    loadFile(pinnedJson)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    await screen.findByRole('button', { name: /Next: Import into Wallet/i })
+  }
+
+  it('derives an address the ranged reading would have missed', () => {
+    // Guards the fixture itself. If the pinned leg ever collapsed back onto
+    // `/0/*` the whole block would still pass while testing nothing.
+    const ranged = pinnedJson.replace('/0/1,', '/0/*,')
+    const rangedAddress = deriveMultisigAddress(
+      parseDescriptor(JSON.parse(ranged).outputDescriptor),
+      0,
+      'testnet',
+    ).address
+    expect(pinnedAddress).not.toBe(rangedAddress)
+  })
+
+  it('warns on the screen that hands back the rebuilt key', async () => {
+    await reachResult()
+    expect(screen.getByText(NOTICE)).toBeTruthy()
+  })
+
+  it('warns on the screen where the customer picks what to do next', async () => {
+    await reachResult()
+    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+
+    // action-choice. No escrow summary renders here, so the wizard card is the
+    // only thing that can carry it.
+    expect(screen.getByRole('button', { name: /Sign Existing PSBT/i })).toBeTruthy()
+    expect(screen.getByText(NOTICE)).toBeTruthy()
+  })
+
+  it('says it once there, not twice', async () => {
+    await reachResult()
+    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+
+    expect(screen.getAllByText(NOTICE)).toHaveLength(1)
+  })
+
+  it('is vouching for the address that screen shows', async () => {
+    await reachResult()
+    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+
+    // The notice claims this page has the right address. That claim is only
+    // worth anything if the address on the same screen is the pinned one.
+    expect(screen.getByText(NOTICE)).toBeTruthy()
+    expect(screen.getByText(/Escrow Address \(/i)).toBeTruthy()
+    expect(screen.queryByText(REFUSAL)).toBeNull()
+  })
+
+  it('does not warn on the same walk for an ordinary escrow', async () => {
+    await reachResult()
+    cleanup()
+
+    // Same path, same screens, unpinned descriptor: silence.
+    loadFile(pinnedJson.replace('/0/1,', '/0/*,'))
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+
+    expect(screen.getByRole('button', { name: /Sign Existing PSBT/i })).toBeTruthy()
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A recovery file this tool will not derive an address from at all
+//
+// `childIndices` refuses a child suffix that is not exactly two components,
+// because `psbt-signer.ts` locates the key by the last two components of the
+// PSBT path: a longer suffix would derive one key for the address and sign with
+// another. The refusal is caught in the wizard and turns into a null address,
+// which on its own is silent. These lock down that it is not silent, and that
+// the screens which stop rendering an escrow summary do not thereby stop
+// warning as well.
+// ---------------------------------------------------------------------------
+
+describe('a recovery file this tool refuses to derive an address from', () => {
+  const UNSUPPORTED = descriptorWith(['/0/0/1', '/0/*', '/0/*'])
+
+  it('says so on the device screen', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+
+    expect(await screen.findByText(REFUSAL)).toBeTruthy()
+  })
+
+  it('says so even though no escrow summary renders to carry it', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+
+    await screen.findByText(REFUSAL)
+    // No address and no balance: the summary is what used to carry every
+    // caveat, and on a refusal it is not on the screen at all.
+    expect(screen.queryByText('Total Balance')).toBeNull()
+    expect(screen.queryByText('Escrow Address')).toBeNull()
+  })
+
+  it('carries the refusal onto the screen that hands over the file to import', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+    await screen.findByText(REFUSAL)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    expect(screen.getByText(REFUSAL)).toBeTruthy()
+  })
+
+  it('does not also claim to have the right address', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+
+    await screen.findByText(REFUSAL)
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+
+  /** Open the import instructions from the device screen, which is one route. */
+  async function openGuideOnRefusal() {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+    await screen.findByText(REFUSAL)
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+  }
+
+  function panelFor(tab: string): HTMLElement {
+    fireEvent.click(screen.getByRole('tab', { name: tab }))
+    const panel = document.getElementById(`wallet-panel-${tab.replace(/\s+/g, '-').toLowerCase()}`)
+    if (!panel) throw new Error(`no panel rendered for ${tab}`)
+    return panel
+  }
+
+  it('does not send them to compare against an address and balance shown above', async () => {
+    // The screen contradicted itself. Its own intro says there is no address
+    // or balance here to compare against, and three lines later every tab told
+    // the customer the balance "must match the balance shown above" and to
+    // confirm the first receive address is "the escrow address shown above".
+    // It was fixed on the intro and the mismatch line only, so all three tabs
+    // kept saying it.
+    await openGuideOnRefusal()
+
+    for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
+      const text = panelFor(tab).textContent ?? ''
+      expect(text).not.toMatch(/shown above/i)
+      expect(text).not.toMatch(/balance above/i)
+      expect(text).not.toMatch(/must match the balance/i)
+      expect(text).not.toMatch(/address as the one shown/i)
+    }
+  })
+
+  it('tells them what to read instead, on every tab', async () => {
+    // The other half. Without this the block above passes for a change that
+    // deletes the check step outright and leaves the customer importing a
+    // wallet with nothing said about what to look at when it loads.
+    await openGuideOnRefusal()
+
+    for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
+      expect(panelFor(tab).textContent).toMatch(
+        /no address and no balance for you to compare against/i,
+      )
+    }
+  })
+
+  it('still tells an ordinary escrow to compare, on every tab', async () => {
+    // And the third half, which is the one that matters most: the comparison
+    // is the whole point of this screen for every customer whose file is fine.
+    loadFile(recoveryJson())
+    confirmInfo()
+    await screen.findByText(EXPECTED_ADDRESS)
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
+      const text = panelFor(tab).textContent ?? ''
+      expect(text).toMatch(/shown above|balance above/i)
+      expect(text).not.toMatch(/no address and no balance/i)
+    }
+  })
+
+  it('is an alert and not an ambient status, because the page is blocked', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+
+    await screen.findByText(REFUSAL)
+    expect(screen.getByRole('alert').textContent).toMatch(REFUSAL)
+  })
+
+  it('does not send them back to a page that has just said it cannot help', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+    await screen.findByText(REFUSAL)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    // Three endings are possible here and only silence is true. Support is
+    // wrong for the same reason it is wrong on a pinned escrow, and "come back
+    // and move it from this page" contradicts the notice directly above it.
+    const card = screen.getByRole('tablist').parentElement
+    expect(card?.textContent).not.toMatch(/contact BTCBacked support/i)
+    expect(card?.textContent).not.toMatch(/move your Bitcoin from this page/i)
+  })
+
+  it('does not promise an address and a balance it has not got', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
+    confirmInfo()
+    await screen.findByText(REFUSAL)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    expect(screen.queryByText(/Below is the address and balance your wallet must show/i)).toBeNull()
+    expect(screen.getByText(REFUSAL)).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A descriptor this tool cannot read AT ALL
+//
+// Same harm as the block above, reached a different way. `parseDescriptor`
+// throwing leaves `parsedDescriptor` null, which is also what "no file opened
+// yet" looks like, so the refusal used to be invisible: no address, no balance,
+// no warning, and a sign button that did nothing and said nothing.
+// ---------------------------------------------------------------------------
+
+describe('a recovery file whose descriptor will not parse', () => {
+  // `multi` rather than `sortedmulti`, which `parseDescriptor` refuses outright.
+  const UNREADABLE = `wsh(multi(2,[${fps[0]}/48'/1'/0'/2']${xpubs[0]}/0/*,[${fps[1]}/48'/1'/0'/2']${xpubs[1]}/0/*))`
+
+  it('says so rather than handing over the file in silence', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNREADABLE }))
+    confirmInfo()
+
+    expect(await screen.findByText(REFUSAL)).toBeTruthy()
+  })
+
+  it('shows no address and no balance to act on', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNREADABLE }))
+    confirmInfo()
+
+    await screen.findByText(REFUSAL)
+    expect(screen.queryByText('Total Balance')).toBeNull()
+    expect(screen.queryByText('Escrow Address')).toBeNull()
+  })
+
+  it('does not claim to have the right address either', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNREADABLE }))
+    confirmInfo()
+
+    await screen.findByText(REFUSAL)
+    expect(screen.queryByText(NOTICE)).toBeNull()
+  })
+
+  it('carries the refusal onto the import instructions', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNREADABLE }))
+    confirmInfo()
+    await screen.findByText(REFUSAL)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    expect(screen.getByText(REFUSAL)).toBeTruthy()
+    expect(screen.queryByText(/Below is the address and balance your wallet must show/i)).toBeNull()
+  })
+
+  it('does not carry the refusal onto the next file in the same session', async () => {
+    loadFile(recoveryJson({ outputDescriptor: UNREADABLE }))
+    confirmInfo()
+    await screen.findByText(REFUSAL)
+
+    // Same mount throughout, which is the point: the flag is wizard state, so
+    // it has to be cleared when the file it describes is replaced. A fresh
+    // render would pass whether it is cleared or not.
+    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+    fireEvent.click(screen.getByRole('button', { name: /Start Over/i }))
+    expect(screen.queryByText(REFUSAL)).toBeNull()
+
+    pasteFile(recoveryJson())
+    confirmInfo()
+
+    expect(await screen.findByText(EXPECTED_ADDRESS)).toBeTruthy()
+    expect(screen.queryByText(REFUSAL)).toBeNull()
   })
 })
 
@@ -571,5 +988,384 @@ describe('import instructions', () => {
     await openGuide()
     const card = screen.getByRole('tablist').parentElement
     expect(card?.textContent ?? '').not.toMatch(/[–—]/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The refusal has to cover SIGNING, not only the address
+//
+// `childIndices` refuses a child suffix that is not exactly two components, and
+// the whole point of that refusal is to stop a signature against the wrong key:
+// `psbt-signer.ts` locates the key by the LAST TWO components of the PSBT's
+// BIP32 path, so for a leg named `/0/0/1` it would derive and sign at `/0/1`
+// instead. That key is not in the witness script this escrow actually uses.
+//
+// The refusal reaches the wizard as a null address, and a null address stops
+// nothing on its own. The customer can still walk action-choice, import-psbt
+// and review-psbt with a working xprv in hand, and the sign button at the end
+// of that walk is the thing this locks down.
+// ---------------------------------------------------------------------------
+
+describe('signing for an escrow this tool refuses to derive', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const SALT = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+  const ACCOUNT_PATH = "m/48'/1'/0'/2'"
+
+  let unsupportedJson = ''
+  let supportedJson = ''
+  /** A file whose descriptor `parseDescriptor` cannot read at all. */
+  let unreadableJson = ''
+  let signablePsbtBase64 = ''
+
+  /**
+   * The PSBT object the wizard is holding, captured as it is parsed.
+   *
+   * `signPsbtWithXprv` signs in place and hands the same object back, so if the
+   * guard ever lets a signature through it lands on this exact instance. The
+   * DOM cannot show that: without the guard the wizard also advances, so a test
+   * that only checks which screen is showing passes while the escrow is signed
+   * against a key that is not in its witness script.
+   */
+  let importedPsbt: bitcoin.Psbt | null = null
+
+  function signatureCount(psbt: bitcoin.Psbt | null): number {
+    if (psbt === null) throw new Error('no PSBT was parsed, so nothing was asserted')
+    return psbt.data.inputs.reduce(
+      (total, input) => total + (input.partialSig?.length ?? 0),
+      0,
+    )
+  }
+
+  beforeEach(() => {
+    importedPsbt = null
+    const realFromBase64 = bitcoin.Psbt.fromBase64.bind(bitcoin.Psbt)
+    vi.spyOn(bitcoin.Psbt, 'fromBase64').mockImplementation((base64, opts) => {
+      const parsed = realFromBase64(base64, opts)
+      importedPsbt = parsed
+      return parsed
+    })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  beforeAll(async () => {
+    const profile = getProfile('pbkdf2-v1')
+    if (!profile) throw new Error('pbkdf2-v1 profile is missing')
+
+    const seed = await deriveSeed(PASSWORD, SALT, profile)
+    const userXprv = deriveXprv(seed, ACCOUNT_PATH, 'testnet')
+    const userXpub = neuterXprv(userXprv, 'testnet')
+    const fingerprint = computeFingerprint(seed, 'testnet')
+
+    // The customer's own leg names a three component child. Everything else
+    // about this file is correct: the password rebuilds the recorded key, so
+    // the wizard reaches the action screens with a usable xprv.
+    const unsupportedDescriptor =
+      `wsh(sortedmulti(2,[${fingerprint}/48'/1'/0'/2']${userXpub}/0/0/1,` +
+      `[${fps[0]}/48'/1'/0'/2']${xpubs[0]}/0/*,` +
+      `[${fps[2]}/48'/1'/0'/2']${xpubs[2]}/0/*))`
+
+    // The same file with the customer's leg written the way `childIndices`
+    // accepts: two components, pinned to the very child the PSBT below names.
+    // Everything else is identical, so the only difference between the two
+    // walks is whether an escrow address can be derived.
+    const supportedDescriptor = unsupportedDescriptor.replace('/0/0/1,', '/0/1,')
+
+    function fileWith(outputDescriptor: string): string {
+      return JSON.stringify({
+        version: 1,
+        network: 'testnet',
+        outputDescriptor,
+        context: { contractId: 'c', role: 'borrower', threshold: 2, totalKeys: 3 },
+        userKey: {
+          keySource: 'PASSWORD',
+          derivationProfile: 'pbkdf2-v1',
+          salt: SALT,
+          derivationPath: ACCOUNT_PATH,
+          xpub: userXpub,
+          fingerprint,
+        },
+      })
+    }
+
+    // The third refusal cause, and the only one that never had a walk. Plain
+    // `multi` rather than `sortedmulti`, which `parseDescriptor` refuses
+    // outright, so `parsedDescriptor` stays null for the whole session. The
+    // customer's leg is untouched, so `replaceKeyByFingerprint` still splices
+    // the rebuilt key in and the wizard still reaches the action screens: this
+    // is a file that recovers a key and cannot open its escrow.
+    const unreadableDescriptor = supportedDescriptor.replace(
+      'wsh(sortedmulti(',
+      'wsh(multi(',
+    )
+
+    unsupportedJson = fileWith(unsupportedDescriptor)
+    supportedJson = fileWith(supportedDescriptor)
+    unreadableJson = fileWith(unreadableDescriptor)
+
+    // A PSBT built the way every other wallet would build it: pinned at `/0/1`,
+    // which is the child the positional signer takes and NOT the child this
+    // escrow's leg names. The witness script holds that `/0/1` key, so signing
+    // it succeeds if it is ever attempted. That is the failure being prevented.
+    const userChild = bip32.fromBase58(userXprv, NET).derive(0).derive(1)
+    const coSigners = [master.derive(0), master.derive(2)].map((node) =>
+      Buffer.from(node.derive(0).derive(1).publicKey),
+    )
+    const pubkeys = [Buffer.from(userChild.publicKey), ...coSigners].sort(Buffer.compare)
+    const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys, network: NET })
+    const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms, network: NET })
+
+    const psbt = new bitcoin.Psbt({ network: NET })
+    psbt.addInput({
+      hash: 'a'.repeat(64),
+      index: 0,
+      witnessUtxo: { script: p2wsh.output!, value: 150_000n },
+      witnessScript: p2ms.output!,
+      bip32Derivation: [
+        {
+          masterFingerprint: Buffer.from(fingerprint, 'hex'),
+          pubkey: Buffer.from(userChild.publicKey),
+          path: `${ACCOUNT_PATH}/0/1`,
+        },
+      ],
+    })
+    psbt.addOutput({ address: p2wsh.address!, value: 100_000n })
+    signablePsbtBase64 = psbt.toBase64()
+  }, 30_000)
+
+  /** Password, then the walk a customer takes to reach the sign button. */
+  async function reachTheSignButton(json: string = unsupportedJson) {
+    loadFile(json)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+
+    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Sign Existing PSBT/i }))
+    fireEvent.change(screen.getByPlaceholderText(/cHNidP8BAH/), {
+      target: { value: signablePsbtBase64 },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Import from Paste/i }))
+    await screen.findByText('Review Imported PSBT')
+  }
+
+  it('lets the customer walk all the way to the sign button', async () => {
+    await reachTheSignButton()
+    expect(screen.getByRole('button', { name: /Add Your Signature/i })).toBeTruthy()
+  })
+
+  it('refuses to sign when the escrow address could not be derived', async () => {
+    await reachTheSignButton()
+    expect(signatureCount(importedPsbt)).toBe(0)
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Your Signature/i }))
+
+    // The assertion that is about the money. The witness script in this PSBT
+    // holds the `/0/1` key the positional signer reaches for, so an unguarded
+    // click succeeds and leaves a real signature on this object. Asserting the
+    // screen alone would pass for a refactor that signs and then fails to
+    // advance, which is the worse of the two failures.
+    expect(signatureCount(importedPsbt)).toBe(0)
+
+    // Still on the review screen. Without the guard the wizard moves on to
+    // sign-finalize.
+    expect(screen.getByText('Review Imported PSBT')).toBeTruthy()
+  })
+
+  it('says why the sign button did nothing, where the customer is still standing', async () => {
+    await reachTheSignButton()
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Your Signature/i }))
+
+    // The refusal renders at card level on EVERY step, sign-finalize included,
+    // so finding it on screen proves nothing on its own. What has to be true is
+    // that it is next to the button that just did nothing.
+    expect(screen.getByText('Review Imported PSBT')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Add Your Signature/i })).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toMatch(REFUSAL)
+  })
+
+  /** The walk to `wallet-view`, which is Path A's first screen. */
+  async function reachWalletView(json: string = unsupportedJson) {
+    loadFile(json)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Create Transaction$/i }))
+  }
+
+  it('does not turn the refusal into a failure report on the screen that would spend', async () => {
+    // `wallet-view` renders on `parsedDescriptor` alone, so a refusal reaches
+    // it, `loadWallet` throws again on mount, and the screen used to fill with
+    // a red "Failed to Load Wallet" box sitting directly under the calm alert.
+    // Its Retry repeats a derivation that is exact and refuses every time, so
+    // the one action offered to a frightened customer could never work.
+    await reachWalletView()
+
+    expect(screen.queryByText(/Failed to Load Wallet/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Retry/i })).toBeNull()
+  })
+
+  it('does not tell them to fund an address it has just refused to show', async () => {
+    // The worst line on the page, and the reason this is not cosmetic: below
+    // the failure box the screen said "No spendable balance. Send Bitcoin to
+    // your escrow address first." to a customer holding no address.
+    await reachWalletView()
+
+    expect(screen.queryByText(/Send Bitcoin to your escrow address/i)).toBeNull()
+    expect(screen.queryByText(/No spendable balance/i)).toBeNull()
+  })
+
+  it('gives one calm account of the refusal there, and only one', async () => {
+    // Two accounts of one fact read as two problems. The wizard's own notice
+    // is the account, and the step adds nothing to it.
+    await reachWalletView()
+
+    expect(screen.getAllByText(REFUSAL).length).toBe(1)
+    expect(screen.getByRole('alert').textContent).toMatch(REFUSAL)
+
+    // And no technical wording reached the customer along the way.
+    const card = document.querySelector('div.glass-card') ?? document.body
+    expect(card.textContent).not.toMatch(/fingerprint/i)
+    expect(card.textContent).not.toMatch(/address layout/i)
+    expect(card.textContent).not.toMatch(/an address that might be wrong/i)
+  })
+
+  it('leaves the customer a way off that screen', async () => {
+    await reachWalletView()
+    expect(screen.getByRole('button', { name: /^Back$/i })).toBeTruthy()
+  })
+
+  /**
+   * The same screen, reached by the refusal cause that used to strand people.
+   *
+   * A descriptor `parseDescriptor` cannot read leaves `parsedDescriptor` null,
+   * and `wallet-view` used to require it. Create Transaction therefore moved
+   * the wizard to a step that rendered nothing: the customer was left holding
+   * the refusal notice, a step indicator, and not one button in either
+   * direction. This walk is the route they actually take to get there.
+   */
+  it('does not strand the customer when the descriptor cannot be read at all', async () => {
+    await reachWalletView(unreadableJson)
+
+    // The refusal is on screen, which is what makes the missing exit so bad.
+    expect(screen.getByRole('alert').textContent).toMatch(REFUSAL)
+
+    // And there is a way out of it.
+    const back = screen.getByRole('button', { name: /^Back$/i })
+    fireEvent.click(back)
+    expect(screen.getByText(/Key Recovered Successfully/i)).toBeTruthy()
+  })
+
+  it('gives that customer the calm screen too, not a failure report', async () => {
+    // The unreadable descriptor now reaches the same branch as the other
+    // refusal, so it must reach the same treatment: no red failure box, no
+    // Retry that cannot work, and no instruction to fund an unshown address.
+    await reachWalletView(unreadableJson)
+
+    expect(screen.queryByText(/Failed to Load Wallet/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Retry/i })).toBeNull()
+    expect(screen.queryByText(/Send Bitcoin to your escrow address/i)).toBeNull()
+  })
+
+  /**
+   * The refusal copy itself, pinned to the words that were approved.
+   *
+   * Written out here rather than compared against the constant it renders
+   * from. A test that imports `ESCROW_UNSUPPORTED` proves the notice and the
+   * error agree, which is worth having, but it agrees just as happily with
+   * wording nobody approved. This is the assertion that fails if the sentence
+   * changes.
+   */
+  it('reads exactly the way the refusal was approved to read', async () => {
+    await reachWalletView()
+
+    expect(screen.getByRole('alert').textContent).toBe(
+      'This page cannot open this escrow. Your recovery file was set up in a ' +
+        'way this page does not handle, so it will not show you an address. ' +
+        'Your Bitcoin has not moved and your key is still yours.',
+    )
+  })
+
+  it('says the same thing when it throws as when it renders', async () => {
+    // The other half. The notice above is one of two places this copy reaches
+    // a customer; `useWalletState` renders a thrown `userMessage` verbatim.
+    // Sourcing both from one constant is the fix, and this is what holds it.
+    await reachWalletView()
+
+    expect(screen.getByRole('alert').textContent).toBe(ESCROW_UNSUPPORTED)
+  })
+
+  it('keeps the import instructions clean on the other route to them', async () => {
+    // The guide is reachable twice over: from the device screen, covered
+    // above, and from action-choice after a password recovery. Both land on
+    // the same component, but only one of them was ever walked in a test.
+    loadFile(unsupportedJson)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Import into External Wallet Instead/i }))
+    await screen.findByRole('tablist')
+
+    for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
+      fireEvent.click(screen.getByRole('tab', { name: tab }))
+      const id = `wallet-panel-${tab.replace(/\s+/g, '-').toLowerCase()}`
+      const text = document.getElementById(id)?.textContent ?? ''
+      expect(text).not.toMatch(/shown above/i)
+      expect(text).not.toMatch(/balance above/i)
+      expect(text).toMatch(/no address and no balance for you to compare against/i)
+    }
+  })
+
+  it('still shows the balance and the spend button for an escrow it can derive', async () => {
+    // Without this the block above passes for a step that renders nothing for
+    // anybody, which would break Path A for every customer whose file is fine.
+    await reachWalletView(supportedJson)
+
+    expect(await screen.findByText('Total Balance')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Create Transaction$/i })).toBeTruthy()
+    expect(screen.queryByText(REFUSAL)).toBeNull()
+  })
+
+  it('signs the same PSBT once the escrow address can be derived', async () => {
+    // The other half of the guard. Without this the block passes for a wizard
+    // that never signs anything at all, which is not the behaviour being
+    // locked down: the refusal has to be about THIS escrow.
+    await reachTheSignButton(supportedJson)
+    expect(signatureCount(importedPsbt)).toBe(0)
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Your Signature/i }))
+
+    expect(signatureCount(importedPsbt)).toBe(1)
+    expect(screen.queryByText(REFUSAL)).toBeNull()
+  })
+
+  it('carries the refusal across every screen on the way to it', async () => {
+    loadFile(unsupportedJson)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+
+    // result
+    expect(await screen.findByText(REFUSAL)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    // action-choice, which must not offer an empty address to copy either
+    expect(screen.getByText(REFUSAL)).toBeTruthy()
+    expect(screen.queryByText(/Escrow Address \(/i)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Sign Existing PSBT/i }))
+    // import-psbt
+    expect(screen.getByText(REFUSAL)).toBeTruthy()
   })
 })

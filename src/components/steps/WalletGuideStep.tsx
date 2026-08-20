@@ -15,6 +15,15 @@ type WalletGuideStepProps = {
   isLoadingBalance: boolean
   balanceError: string | null
   isStandardDerivation: boolean
+  /**
+   * True when no escrow address could be worked out from the recovery file.
+   *
+   * Separate from `isStandardDerivation`, which stays true on a refusal because
+   * nothing was read to make it false. Without this the screen contradicts
+   * itself: the wizard's own notice says the page will not sign anything, and
+   * the line below it says to come back here and move the Bitcoin.
+   */
+  cannotDeriveEscrow: boolean
   onLoadBalance: () => void
   onReset: () => void
   onBackToDescriptor?: () => void
@@ -36,11 +45,41 @@ export function WalletGuideStep({
   isLoadingBalance,
   balanceError,
   isStandardDerivation,
+  cannotDeriveEscrow,
   onLoadBalance,
   onReset,
   onBackToDescriptor,
 }: WalletGuideStepProps) {
   const [activeTab, setActiveTab] = useState<Tab>('Sparrow')
+
+  /*
+   * What to do when the imported wallet disagrees with the address or balance
+   * above. Three cases, not two, and getting it wrong is not a detail.
+   *
+   * Ordinary escrow: a difference means something is wrong, so say so.
+   *
+   * Pinned escrow: the notice on this same screen tells the customer to EXPECT
+   * a difference, so telling them in the next breath that a difference means
+   * stop and call support contradicts it, and does so while they are already
+   * frightened. They need the wording that says nothing is wrong and points
+   * them back here.
+   *
+   * No address at all: there is nothing above to compare against, and pointing
+   * them back to a page that has just said it will not sign anything is the
+   * worst of the three. Say nothing.
+   *
+   * Emptying this line is not on its own enough, and that was the defect. Every
+   * tab's "check it worked" step is written around an address and a balance
+   * "shown above", and on a refusal there is neither: the intro on this same
+   * screen says so three lines earlier. Each of those steps is therefore
+   * three way at its own site too, and sends the customer to what their wallet
+   * shows instead of to a comparison they cannot make.
+   */
+  const mismatchAdvice = (() => {
+    if (cannotDeriveEscrow) return ''
+    if (isStandardDerivation) return 'If either differs, stop and contact BTCBacked support.'
+    return 'If either differs, this wallet cannot open your escrow. Nothing is wrong with your funds. Close it and move your Bitcoin from this page instead.'
+  })()
 
   return (
     <div className="space-y-6">
@@ -49,8 +88,9 @@ export function WalletGuideStep({
           Open Your Wallet in Other Software
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Below is the address and balance your wallet must show. Follow the steps for the
-          software you have, then check that the numbers match before you move anything.
+          {cannotDeriveEscrow
+            ? 'Follow the steps for the software you have. This page could not work out your escrow address, so there is no address or balance here for you to compare against.'
+            : 'Below is the address and balance your wallet must show. Follow the steps for the software you have, then check that the numbers match before you move anything.'}
         </p>
       </div>
 
@@ -151,11 +191,21 @@ export function WalletGuideStep({
               Open the <strong>Transactions</strong> tab and wait for it to finish loading.
             </li>
             <li className="step-list-item font-medium text-sm text-foreground">
-              Check it worked. The balance must match the balance shown above. Then open the{' '}
-              <strong>Addresses</strong> tab and confirm the first receive address is the
-              escrow address shown above. Sparrow can accept a configuration and quietly build
-              a different wallet, and it will not warn you. If either differs, stop and contact
-              BTCBacked support.
+              {cannotDeriveEscrow ? (
+                <>
+                  Check what Sparrow shows. This page has no address and no balance for you to
+                  compare against, so read both from Sparrow itself. The{' '}
+                  <strong>Addresses</strong> tab shows the receive addresses, and the{' '}
+                  <strong>Transactions</strong> tab shows the balance.
+                </>
+              ) : (
+                <>
+                  Check it worked. The balance must match the balance shown above. Then open the{' '}
+                  <strong>Addresses</strong> tab and confirm the first receive address is the
+                  escrow address shown above. Sparrow can accept a configuration and quietly
+                  build a different wallet, and it will not warn you. {mismatchAdvice}
+                </>
+              )}
             </li>
             <li className="step-list-item text-sm text-foreground">
               To move funds, use the <strong>Send</strong> tab.{' '}
@@ -196,9 +246,9 @@ export function WalletGuideStep({
               Wait for Specter to scan the blockchain. This can take a while.
             </li>
             <li className="step-list-item font-medium text-sm text-foreground">
-              Check it worked. The balance must match the balance shown above, and the escrow
-              address must appear in the wallet's address list. If either differs, stop and
-              contact BTCBacked support.
+              {cannotDeriveEscrow
+                ? 'Check what Specter shows. This page has no address and no balance for you to compare against, so read both from Specter itself.'
+                : `Check it worked. The balance must match the balance shown above, and the escrow address must appear in the wallet's address list. ${mismatchAdvice}`}
             </li>
           </ol>
         </div>
@@ -237,14 +287,17 @@ export function WalletGuideStep({
               wait until scanning shows as false.
             </li>
             <li className="step-list-item font-medium text-sm text-foreground">
-              Check it worked. This must print the same address as the one shown above:
+              {cannotDeriveEscrow
+                ? 'Check what Bitcoin Core shows. This page has no address and no balance for you to compare against, so read both from Bitcoin Core itself. This prints the address:'
+                : 'Check it worked. This must print the same address as the one shown above:'}
               <code className="mt-1 block break-all rounded bg-accent px-1.5 py-0.5 text-xs font-mono">
                 {'deriveaddresses "PASTE_HERE" [0,0]'}
               </code>
               Then run{' '}
-              <code className="rounded bg-accent px-1 text-xs font-mono">getbalance</code> and
-              check it matches the balance above. If either differs, stop and contact
-              BTCBacked support.
+              <code className="rounded bg-accent px-1 text-xs font-mono">getbalance</code>
+              {cannotDeriveEscrow
+                ? ' for the balance.'
+                : ` and check it matches the balance above. ${mismatchAdvice}`}
             </li>
           </ol>
         </div>

@@ -1,5 +1,6 @@
-import { useCallback, Component } from 'react'
+import { useCallback, useMemo, Component } from 'react'
 import type { ReactNode } from 'react'
+import { DerivationNotice, UnsupportedEscrowNotice } from '@/components/DerivationNotice'
 import { SecurityBadge } from '@/components/SecurityBadge'
 import { StepIndicator } from '@/components/StepIndicator'
 import { UploadStep } from '@/components/steps/UploadStep'
@@ -19,6 +20,7 @@ import { ReviewPsbtStep } from '@/components/steps/ReviewPsbtStep'
 import { SignFinalizeStep } from '@/components/steps/SignFinalizeStep'
 import { BroadcastStep } from '@/components/steps/BroadcastStep'
 import { useRecoveryWizard } from '@/hooks/useRecoveryWizard'
+import type { WizardStep } from '@/hooks/useRecoveryWizard'
 import { useDerivation } from '@/hooks/useDerivation'
 import { useWalletState } from '@/hooks/useWalletState'
 import { usePsbtWorkflow } from '@/hooks/usePsbtWorkflow'
@@ -47,6 +49,16 @@ const STEP_LABELS_PATH_B = [
 ]
 
 const STEP_LABELS_GUIDE = [...STEP_LABELS_SHARED, 'Import']
+
+/**
+ * The only steps that must NOT carry the derivation notice at wizard level,
+ * because they render an `EscrowSummary` which carries its own copy of it.
+ *
+ * A denylist, not an allowlist. The defect being fixed was a screen nobody
+ * remembered to add, so a step added later has to default to warned; an
+ * allowlist defaults it to silent and reproduces the bug.
+ */
+const SUMMARY_STEPS: WizardStep[] = ['hardware', 'guide']
 
 // ── Error boundary ────────────────────────────────────────────────────────────
 
@@ -99,7 +111,7 @@ export function RecoveryWizard() {
   // Destructure stable setters
   const {
     setRecoveryFile, setStep, setPasswordError, setOriginPathWarning,
-    setDescriptor, setXprv, setParsedDescriptor, reset,
+    setDescriptor, setXprv, setParsedDescriptor, setDescriptorUnreadable, reset,
   } = wizard
 
   // Destructure stable psbtWorkflow functions to avoid whole-object dep
@@ -114,6 +126,45 @@ export function RecoveryWizard() {
 
   // Destructure stable walletState functions
   const { loadWallet, reset: walletReset } = walletState
+
+  /**
+   * The escrow address, derived once.
+   *
+   * Index 0 is not an assumption about where the money is: `deriveMultisigAddress`
+   * resolves each key's own child derivation, so a descriptor pinned to a fixed
+   * child ignores this index and a ranged one takes it, and an escrow has a
+   * single address either way. Memoised because four callbacks below close over
+   * it, and a fresh object each render would defeat their memoisation.
+   *
+   * Null when this tool will not reproduce the address: a child derivation
+   * `childIndices` refuses, or an extended key that will not read. That is
+   * deliberate: no address at all is safer than a plausible wrong one.
+   */
+  const escrowAddressObj = useMemo(() => {
+    if (!wizard.parsedDescriptor || !wizard.recoveryFile) return null
+    try {
+      return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network)
+    } catch {
+      return null
+    }
+  }, [wizard.parsedDescriptor, wizard.recoveryFile])
+
+  const escrowAddress = escrowAddressObj?.address ?? ''
+
+  /**
+   * True once this tool has looked at the file and cannot produce its escrow
+   * address. Held apart from "no descriptor yet", which is every screen before
+   * the file is opened and is not a refusal at all.
+   *
+   * Two ways to get here, and both have to count. The descriptor parsed and
+   * `deriveMultisigAddress` then refused it, or the descriptor did not parse at
+   * all. The second was silent: `parsedDescriptor` stays null, which is
+   * indistinguishable from "not read yet" without the flag, so the customer got
+   * no address, no balance and no warning, and a sign button that did nothing.
+   */
+  const cannotDeriveEscrow =
+    wizard.descriptorUnreadable ||
+    (wizard.parsedDescriptor !== null && escrowAddressObj === null)
 
   // ── Handlers: shared wizard steps ──────────────────────────────────────────
 
@@ -145,11 +196,17 @@ export function RecoveryWizard() {
     // public key, which is all the escrow address and balance need.
     try {
       setParsedDescriptor(parseDescriptor(wizard.recoveryFile.outputDescriptor))
+      setDescriptorUnreadable(false)
     } catch {
-      // Non-fatal. The descriptor is still shown and can be imported by hand.
+      // The descriptor is still shown and can be imported by hand, so this is
+      // not fatal. It is not silent either: no address can come from a
+      // descriptor that will not parse, which means no balance to check and no
+      // signing, and the customer has to be told that before they act on it.
+      setParsedDescriptor(null)
+      setDescriptorUnreadable(true)
     }
     setStep('hardware')
-  }, [wizard.recoveryFile, setStep, setParsedDescriptor, setOriginPathWarning])
+  }, [wizard.recoveryFile, setStep, setParsedDescriptor, setDescriptorUnreadable, setOriginPathWarning])
 
   const handlePasswordSubmit = useCallback(
     async (password: string) => {
@@ -168,12 +225,16 @@ export function RecoveryWizard() {
         try {
           const parsed = parseDescriptor(descriptor)
           setParsedDescriptor(parsed)
+          setDescriptorUnreadable(false)
           const privKey = parsed.keys.find((k) => k.isPrivate)
           if (privKey) {
             setXprv(privKey.extendedKey)
           }
         } catch {
-          // Non-fatal — user can still export the descriptor
+          // The descriptor can still be exported, but nothing else works: no
+          // address, no balance, no signing. Same reasoning as the device path.
+          setParsedDescriptor(null)
+          setDescriptorUnreadable(true)
         }
 
         setStep('result')
@@ -182,7 +243,7 @@ export function RecoveryWizard() {
         setPasswordError(error)
       }
     },
-    [wizard.recoveryFile, derive, setPasswordError, setStep, setDescriptor, setParsedDescriptor, setXprv],
+    [wizard.recoveryFile, derive, setPasswordError, setStep, setDescriptor, setParsedDescriptor, setDescriptorUnreadable, setXprv],
   )
 
   /**
@@ -217,11 +278,11 @@ export function RecoveryWizard() {
       feeRate: number
       sendAll: boolean
     }) => {
-      if (!wizard.parsedDescriptor || !wizard.recoveryFile) return
+      if (!wizard.parsedDescriptor || !wizard.recoveryFile || !escrowAddressObj) return
 
       try {
         const { parsedDescriptor, recoveryFile } = wizard
-        const escrowAddr = deriveMultisigAddress(parsedDescriptor, 0, recoveryFile.network)
+        const escrowAddr = escrowAddressObj
 
         const outputs: TxOutput[] = [
           { address: params.destinationAddress, value: params.amountSats },
@@ -249,33 +310,37 @@ export function RecoveryWizard() {
         // Error is surfaced in psbtWorkflow.error
       }
     },
-    [wizard.parsedDescriptor, wizard.recoveryFile, walletState.utxos, psbtBuild, setStep],
+    [wizard.parsedDescriptor, wizard.recoveryFile, walletState.utxos, psbtBuild, setStep, escrowAddressObj],
   )
 
+  /**
+   * Path A signing.
+   *
+   * `escrowAddressObj` is required, not optional. It is null exactly when
+   * `childIndices` refused this descriptor, and that refusal exists to stop a
+   * signature against the wrong key: `psbt-signer.ts` locates the key by the
+   * last two components of the PSBT path, so a descriptor whose child suffix is
+   * a different length signs with a key that is not the one in the witness
+   * script. Refusing to derive an address and then signing anyway would make
+   * the refusal decorative. `UnsupportedEscrowNotice` is on screen throughout,
+   * so the button doing nothing is not the only thing the customer sees.
+   */
   const handleSign_PathA = useCallback(() => {
-    if (!psbtWorkflow.psbt || !wizard.xprv || !wizard.recoveryFile || !wizard.parsedDescriptor) return
-
-    const escrowAddr = (() => {
-      try {
-        return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network).address
-      } catch {
-        return undefined
-      }
-    })()
+    if (!psbtWorkflow.psbt || !wizard.xprv || !wizard.recoveryFile || !escrowAddressObj) return
 
     const inputsSigned = psbtSign(
       psbtWorkflow.psbt,
       wizard.xprv,
       wizard.recoveryFile.userKey.fingerprint,
       wizard.recoveryFile.network,
-      escrowAddr,
+      escrowAddressObj.address,
     )
 
     // Only advance if signing succeeded (non-null return means at least attempted)
     if (inputsSigned !== null) {
       setStep('export-psbt')
     }
-  }, [psbtSign, psbtWorkflow.psbt, wizard.xprv, wizard.recoveryFile, wizard.parsedDescriptor, setStep])
+  }, [psbtSign, psbtWorkflow.psbt, wizard.xprv, wizard.recoveryFile, setStep, escrowAddressObj])
 
   const handleDownloadPsbt = useCallback(() => {
     const base64 = psbtWorkflow.getBase64()
@@ -297,47 +362,40 @@ export function RecoveryWizard() {
     (data: string | ArrayBuffer) => {
       if (!wizard.recoveryFile) return
 
-      const escrowAddr = (() => {
-        if (!wizard.parsedDescriptor) return undefined
-        try {
-          return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network).address
-        } catch {
-          return undefined
-        }
-      })()
-
-      const imported = psbtImport(data, wizard.recoveryFile.network, escrowAddr)
+      // `escrowAddress` is a display hint, not a check. Its only consumer is
+      // `psbt-finalizer.ts`, which uses it to label an output paying back to
+      // the escrow as change in the summary shown next. Nothing here or below
+      // asks whether the imported PSBT belongs to this escrow, so do not read
+      // this argument as though something does.
+      const imported = psbtImport(
+        data,
+        wizard.recoveryFile.network,
+        escrowAddress || undefined,
+      )
       if (imported) {
         setStep('review-psbt')
       }
     },
-    [wizard.recoveryFile, wizard.parsedDescriptor, psbtImport, setStep],
+    [wizard.recoveryFile, psbtImport, setStep, escrowAddress],
   )
 
+  /** Path B signing. Same refusal as Path A, and for the same reason. */
   const handleSign_PathB = useCallback(() => {
-    if (!psbtWorkflow.psbt || !wizard.xprv || !wizard.recoveryFile || !wizard.parsedDescriptor) return
-
-    const escrowAddr = (() => {
-      try {
-        return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network).address
-      } catch {
-        return undefined
-      }
-    })()
+    if (!psbtWorkflow.psbt || !wizard.xprv || !wizard.recoveryFile || !escrowAddressObj) return
 
     const inputsSigned = psbtSign(
       psbtWorkflow.psbt,
       wizard.xprv,
       wizard.recoveryFile.userKey.fingerprint,
       wizard.recoveryFile.network,
-      escrowAddr,
+      escrowAddressObj.address,
     )
 
     // Only advance if signing succeeded (non-null return means at least attempted)
     if (inputsSigned !== null) {
       setStep('sign-finalize')
     }
-  }, [psbtSign, psbtWorkflow.psbt, wizard.xprv, wizard.recoveryFile, wizard.parsedDescriptor, setStep])
+  }, [psbtSign, psbtWorkflow.psbt, wizard.xprv, wizard.recoveryFile, setStep, escrowAddressObj])
 
   const handleBroadcastFromStep = useCallback(async () => {
     if (!psbtWorkflow.psbt) return
@@ -357,24 +415,6 @@ export function RecoveryWizard() {
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
-  const escrowAddress = (() => {
-    if (!wizard.parsedDescriptor || !wizard.recoveryFile) return ''
-    try {
-      return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network).address
-    } catch {
-      return ''
-    }
-  })()
-
-  const escrowAddressObj = (() => {
-    if (!wizard.parsedDescriptor || !wizard.recoveryFile) return null
-    try {
-      return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network)
-    } catch {
-      return null
-    }
-  })()
-
   // The descriptor the user copies into another wallet. The password path has
   // already rebuilt and checksummed one; the hardware path uses the file's own,
   // checksummed here so wallets that demand a checksum accept it.
@@ -388,11 +428,26 @@ export function RecoveryWizard() {
     }
   })()
 
-  // False for older files this tool cannot reproduce, so the screens that show
-  // an address can tell the user not to trust it.
+  // False when the escrow is not on the plain ranged branch. The address this
+  // tool derives is right either way; what the screens have to say is that
+  // other wallet software may show something different.
   const isStandardDerivation = wizard.parsedDescriptor
     ? usesStandardChildDerivation(wizard.parsedDescriptor)
     : true
+
+  /**
+   * The summary only renders when there is an address, so on a refusal these
+   * two steps carry nothing: the customer is handed the file to import with no
+   * address, no balance and no caveat at all. Gate on the address rather than
+   * on the step, or the one case that needs saying most is the one case that
+   * says nothing.
+   */
+  const summaryCarriesNotice = SUMMARY_STEPS.includes(wizard.step) && escrowAddress !== ''
+
+  // Never both: on a refusal there is no address for the notice to vouch for,
+  // and `UnsupportedEscrowNotice` is what applies instead.
+  const showDerivationNotice =
+    !cannotDeriveEscrow && !isStandardDerivation && !summaryCarriesNotice
 
   const descriptorHasPrivateKey =
     wizard.parsedDescriptor?.keys.some((k) => k.isPrivate) ?? false
@@ -424,6 +479,18 @@ export function RecoveryWizard() {
         className="glass-card rounded-[var(--radius-surface)] border p-6 md:p-8"
         style={{ boxShadow: 'var(--auth-card-glow)' }}
       >
+        {cannotDeriveEscrow && (
+          <div className="mb-6">
+            <UnsupportedEscrowNotice />
+          </div>
+        )}
+
+        {showDerivationNotice && (
+          <div className="mb-6">
+            <DerivationNotice />
+          </div>
+        )}
+
         {showOriginPathWarning && (
           <div
             role="status"
@@ -505,6 +572,7 @@ export function RecoveryWizard() {
                 isLoadingBalance={walletState.isLoading}
                 balanceError={walletState.error}
                 isStandardDerivation={isStandardDerivation}
+                cannotDeriveEscrow={cannotDeriveEscrow}
                 onLoadBalance={handleLoadWallet}
                 onReset={() => { psbtReset(); walletReset(); reset() }}
                 onBackToDescriptor={wizard.descriptor ? () => setStep('result') : undefined}
@@ -531,7 +599,13 @@ export function RecoveryWizard() {
 
           {/* ── Path A ── */}
 
-          {wizard.step === 'wallet-view' && wizard.parsedDescriptor && wizard.recoveryFile && (
+          {/* Gated on the file alone, never on `parsedDescriptor`. A descriptor
+              this page cannot parse leaves that null, and requiring it here
+              rendered nothing at all: the customer arrived from Create
+              Transaction to a card holding the refusal notice and no button of
+              any kind, forward or back, and was stranded. Both refusal causes
+              now land on the same screen, which is Back and nothing else. */}
+          {wizard.step === 'wallet-view' && wizard.recoveryFile && (
             <div key="wallet-view" className="animate-step-enter">
               <WalletViewStep
                 parsedDescriptor={wizard.parsedDescriptor}
@@ -542,6 +616,7 @@ export function RecoveryWizard() {
                 balance={walletState.balance}
                 isLoading={walletState.isLoading}
                 error={walletState.error}
+                cannotDeriveEscrow={cannotDeriveEscrow}
                 onLoadWallet={loadWallet}
                 onCreateTransaction={() => setStep('build-tx')}
                 onBack={() => setStep('action-choice')}
