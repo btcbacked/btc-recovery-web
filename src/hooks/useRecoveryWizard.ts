@@ -26,6 +26,17 @@ type WizardState = {
    * file details screen to the screen that hands over the descriptor.
    */
   originPathWarning: string | null
+  /**
+   * Set when `parseDescriptor` was run on this file's descriptor and threw.
+   *
+   * Held apart from `parsedDescriptor === null`, which is also every step
+   * before a file is opened and on the password path every step before the
+   * password succeeds. Neither of those is a refusal. Without this flag the
+   * parse failure is indistinguishable from "not yet", so the customer is
+   * handed the file with no address, no balance and no warning, and the sign
+   * button dies with nothing said.
+   */
+  descriptorUnreadable: boolean
 }
 
 export function useRecoveryWizard() {
@@ -38,6 +49,7 @@ export function useRecoveryWizard() {
     error: null,
     passwordError: null,
     originPathWarning: null,
+    descriptorUnreadable: false,
   })
 
   const setStep = useCallback((step: WizardStep) => {
@@ -52,6 +64,7 @@ export function useRecoveryWizard() {
       recoveryFile: file,
       error: null,
       originPathWarning: null,
+      descriptorUnreadable: false,
     }))
   }, [])
 
@@ -65,6 +78,10 @@ export function useRecoveryWizard() {
 
   const setParsedDescriptor = useCallback((parsedDescriptor: ParsedDescriptor | null) => {
     setState((prev) => ({ ...prev, parsedDescriptor }))
+  }, [])
+
+  const setDescriptorUnreadable = useCallback((descriptorUnreadable: boolean) => {
+    setState((prev) => ({ ...prev, descriptorUnreadable }))
   }, [])
 
   const setError = useCallback((error: string) => {
@@ -89,6 +106,7 @@ export function useRecoveryWizard() {
       error: null,
       passwordError: null,
       originPathWarning: null,
+      descriptorUnreadable: false,
     })
   }, [])
 
@@ -143,6 +161,7 @@ export function useRecoveryWizard() {
     setDescriptor,
     setXprv,
     setParsedDescriptor,
+    setDescriptorUnreadable,
     setError,
     setPasswordError,
     setOriginPathWarning,

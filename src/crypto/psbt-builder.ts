@@ -6,6 +6,7 @@ import type { Network } from './recovery-file'
 import type { ParsedDescriptor } from './descriptor-parser'
 import type { Utxo } from './blockchain-api'
 import type { DerivedAddress } from './address'
+import { deriveChildNode, childPathSuffix } from './child-derivation'
 import { getBitcoinNetwork } from './networks'
 import { RecoveryError } from './errors'
 
@@ -122,8 +123,6 @@ export function buildPsbt(params: {
       )
     }
 
-    const chain = addressInfo.chain ?? 0
-
     const bip32Derivation = parsedDescriptor.keys.map((key) => {
       let xpub: string
       try {
@@ -149,7 +148,11 @@ export function buildPsbt(params: {
         )
       }
 
-      const childPub = node.derive(chain).derive(addressInfo.index)
+      // The child derivation is per key. A ranged key takes the address index;
+      // a key pinned to a fixed child ignores it. Resolved through the same
+      // helper the address used, so the pubkey written here is the one that is
+      // actually in the witness script.
+      const childPub = deriveChildNode(node, key, addressInfo.index)
       const fpBuf = Buffer.from(key.fingerprint, 'hex')
 
       // Normalize path: convert h and H to '. The match is case-insensitive
@@ -166,7 +169,7 @@ export function buildPsbt(params: {
       return {
         masterFingerprint: fpBuf,
         pubkey: Buffer.from(childPub.publicKey),
-        path: `${originPrefix}/${chain}/${addressInfo.index}`,
+        path: `${originPrefix}${childPathSuffix(key, addressInfo.index)}`,
       }
     })
 

@@ -1,4 +1,5 @@
 import { RecoveryError } from './errors'
+import { RANGED_CHILD_DERIVATION } from './child-derivation'
 
 export type ParsedKeyEntry = {
   fingerprint: string
@@ -97,16 +98,20 @@ export function parseDescriptor(descriptor: string): ParsedDescriptor {
 }
 
 /**
- * True when every key takes its addresses from the standard `/0/*` branch.
+ * True when every key takes its addresses from the plain ranged `/0/*` branch.
  *
- * That is the only shape `deriveMultisigAddress` reproduces: it always derives
- * `/0/<index>` and ignores whatever child derivation the descriptor names. So
- * for any other shape (a key pinned to a fixed child index, or a different
- * branch) the address and balance this tool shows do not describe the wallet
- * in the file, and must not be presented as something to check against.
+ * `deriveMultisigAddress` reproduces the other shapes too, resolving each key's
+ * own child derivation, so this no longer marks an address as untrustworthy.
+ * What it still marks is an escrow that other wallet software is likely to
+ * disagree with: a key pinned to a fixed child, or one on a different branch,
+ * is a single address rather than a range, and importing the descriptor into a
+ * wallet that only scans `/0/*` shows a different address or an empty balance.
+ * The user has to be told which of the two to believe before they act.
  */
 export function usesStandardChildDerivation(parsed: ParsedDescriptor): boolean {
-  return parsed.keys.every((key) => key.childDerivation === '0/*')
+  return parsed.keys.every(
+    (key) => key.childDerivation === RANGED_CHILD_DERIVATION,
+  )
 }
 
 /**

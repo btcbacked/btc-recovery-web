@@ -6,9 +6,9 @@
  * so that bip32.fromBase58() succeeds and real P2WSH addresses are derived.
  */
 import { describe, it, expect } from 'vitest'
-import { deriveMultisigAddress, deriveMultisigAddresses } from './address'
+import { deriveMultisigAddress } from './address'
 import { parseDescriptor } from './descriptor-parser'
-import { RecoveryError } from './errors'
+import { RecoveryError, ESCROW_UNSUPPORTED } from './errors'
 import { bitcoin, ecc } from './bitcoin-lib'
 import { BIP32Factory } from 'bip32'
 import { Buffer } from 'buffer'
@@ -46,8 +46,22 @@ const fpA = Buffer.from(masterNode.fingerprint).toString('hex')
 const fpB = Buffer.from(masterNode.derive(1).fingerprint).toString('hex')
 const fpC = Buffer.from(masterNode.derive(2).fingerprint).toString('hex')
 
-const REAL_DESCRIPTOR =
-  `wsh(sortedmulti(2,[${fpA}/48'/1'/0'/2']${xpubA}/0/*,[${fpB}/48'/1'/0'/2']${xpubB}/0/*,[${fpC}/48'/1'/0'/2']${xpubC}/0/*))`
+/**
+ * The same three keys, with a child derivation chosen per key.
+ *
+ * The suffix is per key in a descriptor, so the tests need to vary them
+ * independently rather than pass a chain alongside the descriptor.
+ */
+function descriptorWith(sufA: string, sufB: string, sufC: string): string {
+  return (
+    `wsh(sortedmulti(2,` +
+    `[${fpA}/48'/1'/0'/2']${xpubA}/${sufA},` +
+    `[${fpB}/48'/1'/0'/2']${xpubB}/${sufB},` +
+    `[${fpC}/48'/1'/0'/2']${xpubC}/${sufC}))`
+  )
+}
+
+const REAL_DESCRIPTOR = descriptorWith('0/*', '0/*', '0/*')
 
 const parsed = parseDescriptor(REAL_DESCRIPTOR)
 
@@ -74,9 +88,17 @@ describe('deriveMultisigAddress', () => {
     expect(derived.index).toBe(5)
   })
 
-  it('returns the chain that was passed', () => {
-    const derived = deriveMultisigAddress(parsed, 0, 'testnet', 1)
-    expect(derived.chain).toBe(1)
+  it('takes the branch from the descriptor, not from a caller supplied chain', () => {
+    // There is no chain parameter any more: the branch is whatever each key's
+    // own child derivation names, which is the only thing that can be right
+    // when the keys disagree.
+    const external = deriveMultisigAddress(parsed, 0, 'testnet').address
+    const internal = deriveMultisigAddress(
+      parseDescriptor(descriptorWith('1/*', '1/*', '1/*')),
+      0,
+      'testnet',
+    ).address
+    expect(external).not.toBe(internal)
   })
 
   it('returns 3 publicKeys (one per descriptor key)', () => {
@@ -110,10 +132,11 @@ describe('deriveMultisigAddress', () => {
     expect(a1).toBe(a2)
   })
 
-  it('uses the chain parameter: chain=1 yields a different address than chain=0', () => {
-    const external = deriveMultisigAddress(parsed, 0, 'testnet', 0)
-    const internal = deriveMultisigAddress(parsed, 0, 'testnet', 1)
-    expect(external.address).not.toBe(internal.address)
+  it('a key on the change branch changes the address', () => {
+    const oneKeyInternal = parseDescriptor(descriptorWith('1/*', '0/*', '0/*'))
+    expect(deriveMultisigAddress(oneKeyInternal, 0, 'testnet').address).not.toBe(
+      deriveMultisigAddress(parsed, 0, 'testnet').address,
+    )
   })
 
   it('throws ADDRESS_ERROR for an invalid extended key', () => {
@@ -134,49 +157,49 @@ describe('deriveMultisigAddress', () => {
     }
   })
 
+  it('says nothing technical to the customer when it cannot read an extended key', () => {
+    // `useWalletState` renders a `RecoveryError`'s `userMessage` verbatim, so
+    // whatever is written at this throw site is what a customer reads. It used
+    // to be `Invalid extended key for fingerprint BBBBBBBB.`, handed to someone
+    // who has lost access to the platform and is trying to move their own
+    // Bitcoin.
+    const badParsed = {
+      ...parsed,
+      keys: [
+        { ...parsed.keys[0]!, extendedKey: 'not_a_valid_xpub' },
+        ...parsed.keys.slice(1),
+      ],
+    }
+
+    let thrown: RecoveryError | null = null
+    try {
+      deriveMultisigAddress(badParsed, 0, 'testnet')
+    } catch (err) {
+      thrown = err as RecoveryError
+    }
+    if (thrown === null) throw new Error('the invalid key was accepted, so nothing was asserted')
+
+    expect(thrown.userMessage).toBe(ESCROW_UNSUPPORTED)
+    expect(thrown.userMessage).not.toMatch(/fingerprint/i)
+    expect(thrown.userMessage).not.toMatch(/extended key/i)
+    expect(thrown.userMessage).not.toMatch(/invalid/i)
+
+    // No dashes on screen, and nothing that hands the customer's key or their
+    // funds to anyone else.
+    expect(thrown.userMessage).not.toMatch(/[\u2013\u2014]/)
+    expect(thrown.userMessage).toMatch(/your key is still yours/i)
+
+    // The technical account is not lost, it is just not on screen.
+    expect(thrown.detail).toMatch(/fingerprint/i)
+    expect(thrown.detail).toContain(parsed.keys[0]!.fingerprint)
+  })
+
   it('returned publicKeys are compressed 33-byte keys', () => {
     const derived = deriveMultisigAddress(parsed, 0, 'testnet')
     for (const pk of derived.publicKeys) {
       // Compressed public keys are 33 bytes (0x02 or 0x03 prefix)
       expect(pk.length).toBe(33)
       expect([0x02, 0x03]).toContain(pk[0])
-    }
-  })
-})
-
-// ---------------------------------------------------------------------------
-// deriveMultisigAddresses – batch derivation
-// ---------------------------------------------------------------------------
-
-describe('deriveMultisigAddresses', () => {
-  it('returns the requested number of addresses', () => {
-    const addresses = deriveMultisigAddresses(parsed, 0, 5, 'testnet')
-    expect(addresses).toHaveLength(5)
-  })
-
-  it('starts at startIndex and increments sequentially', () => {
-    const addresses = deriveMultisigAddresses(parsed, 10, 3, 'testnet')
-    expect(addresses[0]!.index).toBe(10)
-    expect(addresses[1]!.index).toBe(11)
-    expect(addresses[2]!.index).toBe(12)
-  })
-
-  it('returns all unique addresses', () => {
-    const addresses = deriveMultisigAddresses(parsed, 0, 5, 'testnet')
-    const unique = new Set(addresses.map((a) => a.address))
-    expect(unique.size).toBe(5)
-  })
-
-  it('returns an empty array when count is 0', () => {
-    const addresses = deriveMultisigAddresses(parsed, 0, 0, 'testnet')
-    expect(addresses).toHaveLength(0)
-  })
-
-  it('matches the corresponding single-derivation at each index', () => {
-    const batch = deriveMultisigAddresses(parsed, 0, 3, 'testnet')
-    for (let i = 0; i < 3; i++) {
-      const single = deriveMultisigAddress(parsed, i, 'testnet')
-      expect(batch[i]!.address).toBe(single.address)
     }
   })
 })
@@ -252,7 +275,10 @@ describe('deriveMultisigAddress at production depth', () => {
   })
 
   it('derives the change branch correctly', () => {
-    expect(deriveMultisigAddress(mixed, 3, 'testnet', 1).address).toBe(
+    const onChange = parseDescriptor(
+      MIXED_DEPTH_DESCRIPTOR.replaceAll('/0/*', '/1/*'),
+    )
+    expect(deriveMultisigAddress(onChange, 3, 'testnet').address).toBe(
       expectedAddress(1, 3),
     )
   })

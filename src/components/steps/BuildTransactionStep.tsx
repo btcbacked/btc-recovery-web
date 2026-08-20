@@ -80,12 +80,21 @@ export function BuildTransactionStep({
   const isAmountValid = sendAll
     ? effectiveAmountSats > 0
     : amountSats > 0 && amountSats + estimatedFee <= balance
-  const canReview = isAddressValid && isAmountValid && destination.trim() !== escrowAddress?.address
+  // `escrowAddress` is null when this escrow's address could not be derived.
+  // Optional chaining alone would turn the send-to-self check into `!== undefined`,
+  // which is true for every destination, so the guard would quietly stop guarding
+  // in exactly the case where nothing about the escrow is known. Require it.
+  const canReview =
+    escrowAddress !== null &&
+    isAddressValid &&
+    isAmountValid &&
+    destination.trim() !== escrowAddress.address
 
   const addressError = (() => {
     if (!destination) return null
     if (!isValidBitcoinAddress(destination.trim())) return 'Invalid Bitcoin address format.'
-    if (destination.trim() === escrowAddress?.address) return 'Destination cannot be the same as the escrow address.'
+    if (escrowAddress === null) return 'This page cannot work out your escrow address, so it will not build a payment.'
+    if (destination.trim() === escrowAddress.address) return 'Destination cannot be the same as the escrow address.'
     return null
   })()
 
