@@ -443,14 +443,20 @@ describe('buildPsbt at production depth', () => {
   const mixed = parseDescriptor(MIXED_DEPTH_DESCRIPTOR)
 
   function buildAt(index: number, chain = 0): bitcoin.Psbt {
-    const addressInfo = deriveMultisigAddress(mixed, index, 'testnet', chain)
+    // The branch is a property of the descriptor now, not an argument, so
+    // asking for the change branch means asking for a descriptor on it.
+    const descriptor =
+      chain === 0
+        ? mixed
+        : parseDescriptor(MIXED_DEPTH_DESCRIPTOR.replaceAll('/0/*', `/${chain}/*`))
+    const addressInfo = deriveMultisigAddress(descriptor, index, 'testnet')
     return buildPsbt({
       utxos: [{ utxo: makeUtxo(fakeTxid(3), 0, 500_000), addressInfo }],
       outputs: [{ address: DESTINATION_ADDRESS, value: 400_000 }],
       changeAddress: null,
       feeRate: 5,
       network: 'testnet',
-      parsedDescriptor: mixed,
+      parsedDescriptor: descriptor,
     })
   }
 
@@ -527,6 +533,66 @@ describe('buildPsbt at production depth', () => {
     })
 
     expect(roundTripPaths(psbt)).toContain("m/48'/1'/0'/2'/0/7/0/4")
+  })
+
+  /** The same escrow with every hardened marker respelled. */
+  function markersAs(marker: string): string {
+    // Only inside the origin brackets: a base58 key can hold an `h` too, and
+    // the fingerprints are hex, so nothing else in there can be touched.
+    return MIXED_DEPTH_DESCRIPTOR.replace(
+      /\[([^\]]*)\]/g,
+      (_full, inner: string) => `[${inner.replace(/h/g, marker)}]`,
+    )
+  }
+
+  function pathsFor(descriptor: string, index: number): string[] {
+    const parsed = parseDescriptor(descriptor)
+    const addressInfo = deriveMultisigAddress(parsed, index, 'testnet')
+    return roundTripPaths(
+      buildPsbt({
+        utxos: [{ utxo: makeUtxo(fakeTxid(8), 0, 500_000), addressInfo }],
+        outputs: [{ address: DESTINATION_ADDRESS, value: 400_000 }],
+        changeAddress: null,
+        feeRate: 5,
+        network: 'testnet',
+        parsedDescriptor: parsed,
+      }),
+    ).sort()
+  }
+
+  it('reads H, h and the apostrophe as one and the same hardened marker', () => {
+    // All three are legal BIP-380 and the backend is not the only thing that
+    // writes a descriptor into a recovery file. A marker the normaliser misses
+    // reaches the PSBT encoder, which reads "48H" as the UNHARDENED child 48
+    // without complaining, so the PSBT names a key nobody holds and the
+    // signature collected against it is worthless.
+    const upper = markersAs('H')
+    const apostrophe = markersAs("'")
+    expect(upper).not.toBe(MIXED_DEPTH_DESCRIPTOR)
+    expect(apostrophe).not.toBe(MIXED_DEPTH_DESCRIPTOR)
+
+    // Pinned exactly, because the encoder drops the marker either way: the
+    // decoded paths are the only evidence of what was actually written.
+    const expected = [
+      "m/48'/1'/0'/2'/0/2/0/4",
+      "m/48'/1'/0'/2'/0/7/0/4",
+      "m/88'/1'/0'/0'/0/4",
+    ]
+    expect(pathsFor(MIXED_DEPTH_DESCRIPTOR, 4)).toEqual(expected)
+    expect(pathsFor(upper, 4)).toEqual(expected)
+    expect(pathsFor(apostrophe, 4)).toEqual(expected)
+  })
+
+  it('normalises one leg written in a different case from the rest', () => {
+    // A descriptor that has been through more than one wallet is the realistic
+    // way a mixed spelling arrives, and it is also the case where a leg quietly
+    // going unhardened is hardest to notice: the other two legs still look
+    // right. The platform leg is the one respelled here, so its final marker
+    // sits at the end of the origin path with nothing after it.
+    const mixedCase = MIXED_DEPTH_DESCRIPTOR.replace('88h/1h/0h/0h', "88H/1h/0H/0h")
+    expect(mixedCase).not.toBe(MIXED_DEPTH_DESCRIPTOR)
+
+    expect(pathsFor(mixedCase, 4)).toEqual(pathsFor(MIXED_DEPTH_DESCRIPTOR, 4))
   })
 
   it('does not invent a level when a key carries no origin path', () => {

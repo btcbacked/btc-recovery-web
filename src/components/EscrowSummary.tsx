@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { AlertTriangle, RefreshCw } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { CopyButton } from '@/components/CopyButton'
+import { DerivationNotice } from '@/components/DerivationNotice'
 import { formatBtc, formatSats } from '@/lib/btcFormat'
 
 type EscrowSummaryProps = {
@@ -10,8 +11,9 @@ type EscrowSummaryProps = {
   isLoading: boolean
   error: string | null
   /**
-   * False when this tool cannot reproduce the wallet the recovery file
-   * describes, so the address and balance below must not be trusted.
+   * False when the escrow does not use the plain ranged address layout. The
+   * address below is still correct; what changes is that other wallet software
+   * may disagree with it, so the user is told which one to believe.
    */
   isStandardDerivation: boolean
   onLoad: () => void
@@ -40,16 +42,7 @@ export function EscrowSummary({
 
   return (
     <div className="space-y-3">
-      {!isStandardDerivation && (
-        <div className="flex items-start gap-2 rounded-[var(--radius-base)] border border-destructive/30 bg-destructive/10 px-4 py-3">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
-          <p className="text-xs text-destructive-text">
-            <strong>Do not rely on the address or balance below.</strong> This recovery file
-            uses an older layout that this tool cannot check for you. Please contact BTCBacked
-            support before you move any funds.
-          </p>
-        </div>
-      )}
+      {!isStandardDerivation && <DerivationNotice />}
 
       <div className="rounded-[var(--radius-base)] border border-border bg-accent/50 px-4 py-3">
         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
