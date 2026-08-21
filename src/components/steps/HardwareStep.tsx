@@ -1,8 +1,15 @@
 import { Cpu, Download } from 'lucide-react'
 import { CopyButton } from '@/components/CopyButton'
 import { EscrowSummary } from '@/components/EscrowSummary'
+import {
+  PrivateKeyWarning,
+  privateKeyWarningDescribedBy,
+} from '@/components/PrivateKeyWarning'
 import { describeKeySource } from '@/crypto'
 import type { RecoveryFile } from '@/crypto'
+
+/** Names the key block for assistive technology. Reuses the visible label. */
+const LABEL_ID = 'hardware-escrow-file-label'
 
 type HardwareStepProps = {
   file: RecoveryFile
@@ -37,7 +44,7 @@ export function HardwareStep({
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'btcbacked-recovery-descriptor.txt'
+    a.download = 'btcbacked-escrow-file.txt'
     // Firefox requires the anchor to be in the DOM before .click()
     document.body.appendChild(a)
     a.click()
@@ -60,7 +67,7 @@ export function HardwareStep({
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
           There is no password to enter, because your private key stays on the device and
-          never reaches this browser. Copy the wallet configuration below into your wallet
+          never reaches this browser. Copy the escrow file below into your wallet
           app, then approve payments on your device.
         </p>
       </div>
@@ -77,17 +84,33 @@ export function HardwareStep({
         />
       )}
 
+      {/* Silent on this path: a device holds the key, so the file below carries
+          public keys only. Rendered anyway, because whether a string is safe is
+          a fact about the string and not about which screen printed it. */}
+      <PrivateKeyWarning text={descriptor} />
+
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Wallet Configuration (Output Descriptor)
+        <p
+          id={LABEL_ID}
+          className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          Escrow File
         </p>
-        <div className="code-block">
+        {/* Usually a public only file, so the description is usually absent.
+            Whether it resolves is the warning's single gate deciding, not this
+            screen guessing a second time. */}
+        <div
+          role="group"
+          aria-labelledby={LABEL_ID}
+          aria-describedby={privateKeyWarningDescribedBy(descriptor)}
+          className="code-block"
+        >
           <pre>{descriptor}</pre>
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
-        <CopyButton text={descriptor} label="Copy Descriptor" />
+        <CopyButton text={descriptor} label="Copy Escrow File" />
         <button
           type="button"
           onClick={handleDownload}

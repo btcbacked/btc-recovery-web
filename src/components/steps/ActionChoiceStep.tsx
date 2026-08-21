@@ -120,7 +120,7 @@ export function ActionChoiceStep({
             Import into External Wallet Instead
           </button>
           <p className="mt-1 text-xs text-muted-foreground">
-            Export your descriptor to a wallet app like Sparrow or Specter.
+            Export your signing file to a wallet app like Sparrow or Specter.
           </p>
         </div>
       </div>
