@@ -18,6 +18,9 @@ export { getBitcoinNetwork, getMempoolApiBase } from './networks'
 // Descriptor parser
 export { parseDescriptor, findUserKey, usesStandardChildDerivation } from './descriptor-parser'
 export { originPathWarning } from './origin-path'
+
+// Proves a rendered string carries no key material. Never gated on a parse.
+export { provablyPublicOnly } from './private-key-scan'
 export type { ParsedDescriptor, ParsedKeyEntry } from './descriptor-parser'
 
 // Per key child derivation: the one resolver every derivation site shares

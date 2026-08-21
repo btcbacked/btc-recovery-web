@@ -889,7 +889,21 @@ describe('password path — a file that fails its own key check', () => {
     submitPassword()
 
     const alert = await screen.findByRole('alert')
-    expect(alert.textContent).toMatch(/Bitcoin professional you trust/i)
+    expect(alert.textContent).toMatch(/Keep this file and your password/i)
+    expect(alert.textContent).toMatch(/open each one here/i)
+  })
+
+  /**
+   * The referral this used to assert was ruled out by the CEO. Asserted at the
+   * screen and not only in the catalogue, because the catalogue is not what a
+   * customer reads.
+   */
+  it('refers the customer to no one', async () => {
+    submitPassword()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).not.toMatch(/professional/i)
+    expect(alert.textContent).not.toMatch(/take (them|it) to/i)
   })
 })
 
@@ -943,7 +957,7 @@ describe('import instructions', () => {
     await openGuide()
     fireEvent.click(screen.getByRole('tab', { name: 'Specter' }))
     const panel = document.getElementById('wallet-panel-specter')
-    expect(panel?.textContent).toMatch(/derivation not being supported/i)
+    expect(panel?.textContent).toMatch(/cannot handle the way this wallet is set up/i)
     expect(panel?.textContent).toMatch(/Nothing is wrong with your funds/i)
   })
 
@@ -1015,6 +1029,8 @@ describe('signing for an escrow this tool refuses to derive', () => {
   let supportedJson = ''
   /** A file whose descriptor `parseDescriptor` cannot read at all. */
   let unreadableJson = ''
+  /** The key the password rebuilds, so a test can look for it on the page. */
+  let userXprv = ''
   let signablePsbtBase64 = ''
 
   /**
@@ -1055,7 +1071,7 @@ describe('signing for an escrow this tool refuses to derive', () => {
     if (!profile) throw new Error('pbkdf2-v1 profile is missing')
 
     const seed = await deriveSeed(PASSWORD, SALT, profile)
-    const userXprv = deriveXprv(seed, ACCOUNT_PATH, 'testnet')
+    userXprv = deriveXprv(seed, ACCOUNT_PATH, 'testnet')
     const userXpub = neuterXprv(userXprv, 'testnet')
     const fingerprint = computeFingerprint(seed, 'testnet')
 
@@ -1301,6 +1317,85 @@ describe('signing for an escrow this tool refuses to derive', () => {
     await reachWalletView()
 
     expect(screen.getByRole('alert').textContent).toBe(ESCROW_UNSUPPORTED)
+  })
+
+  /**
+   * The live defect, walked the way the customer walks it.
+   *
+   * Password recovery succeeds, so the rebuilt `xprv` is spliced into the
+   * descriptor and printed in full. The descriptor then fails to parse, which
+   * leaves `parsedDescriptor` null, and the warning used to be gated on that:
+   * the one screen a customer reaches after something has already gone wrong
+   * was the one screen that showed their private key with nothing beside it
+   * saying what it was. A screenshot of that screen sent to a stranger
+   * offering help is their Bitcoin gone.
+   *
+   * Asserted on both screens that print it, and each assertion is made only
+   * after checking the key really is on that screen, so this cannot quietly
+   * become a test that passes because nothing was rendered.
+   */
+  it('warns the customer their key is on screen even when the escrow cannot be read', async () => {
+    loadFile(unreadableJson)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    await screen.findByRole('button', { name: /Next: Import into Wallet/i })
+
+    // The result screen.
+    expect(document.body.textContent).toContain(userXprv)
+    expect(screen.getAllByText(/Keep this secret/i).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Import into External Wallet Instead/i }))
+    await screen.findByRole('tablist')
+
+    // The guide screen, which is where it was missing.
+    expect(document.body.textContent).toContain(userXprv)
+    expect(screen.getAllByText(/Keep this secret/i).length).toBeGreaterThan(0)
+
+    // And the same wrong gate governed this line, so it is pinned here too.
+    expect(document.getElementById('wallet-panel-sparrow')?.textContent).toMatch(
+      /already holds your signing key/i,
+    )
+  })
+
+  /**
+   * The wiring, walked rather than assumed.
+   *
+   * The component decides both claims from a `keySource` prop, and every test
+   * of that is a unit test that hands it the value directly. What none of them
+   * can catch is the wizard passing the wrong thing: a stale boolean, the
+   * descriptor, an empty string. Two routes reach this screen and they read
+   * different state, so both are walked.
+   */
+  it('names the signing file on the route a password customer walks', async () => {
+    loadFile(unsupportedJson)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Import into External Wallet Instead/i }))
+    await screen.findByRole('tablist')
+
+    expect(document.body.textContent).toMatch(/Signing File/)
+    expect(document.body.textContent).not.toMatch(/Escrow File/)
+  })
+
+  it('says escrow file, and never signing file, on the route a device customer walks', async () => {
+    loadFile(recoveryJson({ keySource: 'COLD_CARD' }))
+    confirmInfo()
+    fireEvent.click(await screen.findByRole('button', { name: /View Import Instructions/i }))
+    await screen.findByRole('tablist')
+
+    expect(document.body.textContent).toMatch(/Escrow File/)
+    expect(document.body.textContent).not.toMatch(/Signing File/)
+    expect(document.getElementById('wallet-panel-sparrow')?.textContent).toMatch(
+      /Connect your hardware wallet/i,
+    )
   })
 
   it('keeps the import instructions clean on the other route to them', async () => {

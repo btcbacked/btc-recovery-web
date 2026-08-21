@@ -138,15 +138,66 @@ describe('RecoveryError', () => {
       'DERIVATION_ERROR',
     ]
 
+    /**
+     * These asserted a referral to "a Bitcoin professional you trust" until the
+     * CEO ruled that this copy carries no referral to any third party. The
+     * assertion is inverted rather than deleted, because an unenforced copy
+     * rule is one careless edit from being back.
+     *
+     * What replaces it is the approved ending: confirm the money has not moved
+     * and the key is still theirs, then stop. A message with no next step is
+     * the intended shape here, not an oversight.
+     */
     for (const code of DEAD_END_FILE_ERRORS) {
-      it(`"${code}" points the reader somewhere they can actually go`, () => {
-        expect(ERROR_MESSAGES[code]).toMatch(/Bitcoin professional you trust/i)
+      it(`"${code}" refers the reader to no one`, () => {
+        expect(ERROR_MESSAGES[code]).not.toMatch(/professional/i)
+        expect(ERROR_MESSAGES[code]).not.toMatch(/take (them|it) to/i)
+      })
+
+      it(`"${code}" ends by confirming the money and the key are still theirs`, () => {
+        expect(ERROR_MESSAGES[code]).toMatch(
+          /Your Bitcoin has not moved and your key is still yours\.$/,
+        )
       })
     }
+
+    it('sends the reader to no outside person or service anywhere in the catalogue', () => {
+      const everything = [
+        ...Object.values(ERROR_MESSAGES),
+        KEY_MISMATCH_NEXT_STEPS,
+        KEY_MISMATCH_UNCHECKABLE,
+        KEY_MISMATCH_INCONSISTENT_FILE,
+      ].join(' ')
+      for (const referral of [
+        /professional/i,
+        /specialist/i,
+        /consultant/i,
+        /advisor/i,
+        /recovery service/i,
+        /someone you trust/i,
+        /third party/i,
+      ]) {
+        expect(everything).not.toMatch(referral)
+      }
+    })
 
     it('never refers the reader to a newer version of this tool', () => {
       expect(ERROR_MESSAGES.UNSUPPORTED_VERSION).not.toMatch(/update this tool/i)
       expect(ERROR_MESSAGES.UNSUPPORTED_VERSION).toMatch(/no newer version/i)
+    })
+
+    /**
+     * This fires on both paths, so any name for the object is false for one of
+     * them. Naming none is the resolution, not an omission.
+     */
+    it('names no object in a message that fires on both paths', () => {
+      expect(ERROR_MESSAGES.DESCRIPTOR_ERROR).toBe(
+        'This file could not be prepared for another wallet.',
+      )
+      expect(ERROR_MESSAGES.DESCRIPTOR_ERROR).not.toMatch(/configuration/i)
+      expect(ERROR_MESSAGES.DESCRIPTOR_ERROR).not.toMatch(/descriptor/i)
+      expect(ERROR_MESSAGES.DESCRIPTOR_ERROR).not.toMatch(/signing file/i)
+      expect(ERROR_MESSAGES.DESCRIPTOR_ERROR).not.toMatch(/escrow file/i)
     })
 
     it('never asks the reader to retry something deterministic', () => {
@@ -167,9 +218,15 @@ describe('RecoveryError', () => {
   })
 
   describe('KEY_MISMATCH_NEXT_STEPS', () => {
+    /**
+     * The lead used to be "take this file to a Bitcoin professional you trust",
+     * which is the referral the CEO ruled out. What is left leads with the
+     * instruction that needs nobody: the reader already holds both halves.
+     */
     it('leads with the one instruction that always works', () => {
       const firstLine = KEY_MISMATCH_NEXT_STEPS.split('\n')[1] ?? ''
-      expect(firstLine).toMatch(/Bitcoin professional you trust/i)
+      expect(firstLine).toMatch(/Keep this file and your password/i)
+      expect(firstLine).not.toMatch(/professional/i)
     })
 
     it('is broken into short lines rather than one paragraph', () => {

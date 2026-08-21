@@ -87,7 +87,7 @@ export function DerivingStep() {
       <div
         className="mx-auto h-1 w-full max-w-xs overflow-hidden rounded-full bg-border"
         role="progressbar"
-        aria-label="Derivation progress"
+        aria-label="Rebuilding your key"
       >
         <div
           className="h-full w-full origin-left animate-pulse rounded-full opacity-80"

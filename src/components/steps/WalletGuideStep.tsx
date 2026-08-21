@@ -1,14 +1,26 @@
 import { useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
 import { CopyButton } from '@/components/CopyButton'
 import { EscrowSummary } from '@/components/EscrowSummary'
+import {
+  PrivateKeyWarning,
+  privateKeyWarningDescribedBy,
+} from '@/components/PrivateKeyWarning'
+import { isPasswordKeySource } from '@/crypto'
 import { cn } from '@/lib/utils'
 
+/** Names the key block for assistive technology. Reuses the visible label. */
+const LABEL_ID = 'wallet-guide-file-label'
+
 type WalletGuideStepProps = {
-  /** The wallet configuration the user pastes into other software. */
+  /** The signing or escrow file the user pastes into other software. */
   descriptor: string
-  /** True when the configuration carries the user's signing key in the clear. */
-  descriptorHasPrivateKey: boolean
+  /**
+   * `userKey.keySource` straight off the recovery file, unread and
+   * uninterpreted. This is the fact that decides what the string on this screen
+   * IS, and it is the same field the wizard routes the customer on, so the name
+   * this screen prints cannot disagree with the path they walked to reach it.
+   */
+  keySource: string
   escrowAddress: string
   balance: number
   depositCount: number
@@ -20,8 +32,9 @@ type WalletGuideStepProps = {
    *
    * Separate from `isStandardDerivation`, which stays true on a refusal because
    * nothing was read to make it false. Without this the screen contradicts
-   * itself: the wizard's own notice says the page will not sign anything, and
-   * the line below it says to come back here and move the Bitcoin.
+   * itself: the wizard's own notice says this page cannot open the escrow and
+   * will not show an address, and the line below it says to come back here and
+   * move the Bitcoin.
    */
   cannotDeriveEscrow: boolean
   onLoadBalance: () => void
@@ -38,7 +51,7 @@ const panelId = (tab: Tab) => `wallet-panel-${tab.replace(/\s+/g, '-').toLowerCa
 
 export function WalletGuideStep({
   descriptor,
-  descriptorHasPrivateKey,
+  keySource,
   escrowAddress,
   balance,
   depositCount,
@@ -53,6 +66,58 @@ export function WalletGuideStep({
   const [activeTab, setActiveTab] = useState<Tab>('Sparrow')
 
   /*
+   * What this screen CLAIMS comes from the recovery file. What this screen
+   * WARNS about comes from reading the string. Those are different questions
+   * and they need different sources of truth.
+   *
+   * A claim is a statement of fact to the customer: what the thing they are
+   * holding is called, and whether their wallet can sign with it. Being wrong
+   * costs trust and, on the device path, contradicts the one promise that
+   * matters most to them, which is that their key never left the device. So a
+   * claim is only made from something known: `keySource` is recorded in the
+   * file, is the same field the wizard routed them on, and cannot be null,
+   * truncated or coincidental.
+   *
+   * A warning is a guess that has to be safe when wrong, so it reads the string
+   * itself and errs toward showing. That work lives in `PrivateKeyWarning` and
+   * deliberately does not appear here.
+   *
+   * The two can disagree, and neither is broken when they do. A pattern that
+   * fires on a device path descriptor shows a warning nobody needed while this
+   * screen still correctly says "escrow file", because the file says the key is
+   * on a device and no string ever outvotes that.
+   *
+   * This also replaces the original defect properly. Both claims were computed
+   * from `parsedDescriptor`, which is null exactly when the descriptor failed
+   * to parse, so on the one screen a frightened customer reaches they were told
+   * to connect a hardware wallet they have never owned. `keySource` is present
+   * whether or not anything parsed.
+   */
+  const isPasswordPath = isPasswordKeySource(keySource)
+
+  /*
+   * One screen, two objects, and until now one name covering both.
+   *
+   * A password customer's string carries their private key in plain text: that
+   * is a signing file. A hardware customer's string carries public keys only:
+   * that is an escrow file. Calling both of them "the wallet configuration"
+   * collapsed the one distinction that decides whether the text on this page
+   * can spend their Bitcoin, and it did so on the only screen that prints that
+   * text in full.
+   *
+   * This reads the same fact the Sparrow signing step reads, so the name of the
+   * object and the instructions for using it cannot drift apart: a screen
+   * cannot say "escrow file" and then tell them their wallet will sign.
+   *
+   * Third party labels are deliberately not renamed below. Sparrow's Descriptor
+   * box, Specter's "import from a descriptor" and Bitcoin Core's
+   * `importdescriptors` are what those apps put on screen, and a customer
+   * hunting for a control has to be told the word they will actually see.
+   */
+  const fileName = isPasswordPath ? 'signing file' : 'escrow file'
+  const fileNameTitle = isPasswordPath ? 'Signing File' : 'Escrow File'
+
+  /*
    * What to do when the imported wallet disagrees with the address or balance
    * above. Three cases, not two, and getting it wrong is not a detail.
    *
@@ -65,7 +130,7 @@ export function WalletGuideStep({
    * them back here.
    *
    * No address at all: there is nothing above to compare against, and pointing
-   * them back to a page that has just said it will not sign anything is the
+   * them back to a page that has just said it cannot open this escrow is the
    * worst of the three. Say nothing.
    *
    * Emptying this line is not on its own enough, and that was the defect. Every
@@ -106,32 +171,34 @@ export function WalletGuideStep({
         />
       )}
 
-      {/* The configuration itself, so the user does not have to leave this page */}
+      <PrivateKeyWarning text={descriptor} />
+
+      {/* The file itself, so the user does not have to leave this page */}
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Wallet Configuration
+        <p
+          id={LABEL_ID}
+          className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          {fileNameTitle}
         </p>
-        <div className="code-block">
+        {/* This screen prints either file, so the description resolves only on
+            the one that carries the key. Same gate as the warning above. */}
+        <div
+          role="group"
+          aria-labelledby={LABEL_ID}
+          aria-describedby={privateKeyWarningDescribedBy(descriptor)}
+          className="code-block"
+        >
           <pre>{descriptor}</pre>
         </div>
         <div className="mt-2 flex justify-center">
-          <CopyButton text={descriptor} label="Copy Configuration" />
+          <CopyButton text={descriptor} label={`Copy ${fileNameTitle}`} />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
           Copy all of it, including the hash sign near the end and the eight characters after
           it. Wallets reject it or build the wrong wallet if any part is missing.
         </p>
       </div>
-
-      {descriptorHasPrivateKey && (
-        <div className="flex items-start gap-2 rounded-[var(--radius-base)] bg-warning/10 px-4 py-3">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-          <p className="text-xs text-warning-text">
-            <strong>Keep this secret.</strong> This configuration contains your signing key in
-            plain text. Anyone who gets it can spend your Bitcoin.
-          </p>
-        </div>
-      )}
 
       {/* Premium underline tab bar — borderless, indicator-only active state */}
       <div role="tablist" aria-label="Wallet software" className="flex border-b border-border">
@@ -180,8 +247,8 @@ export function WalletGuideStep({
               Set <strong>Policy Type</strong> to <strong>Multi Signature</strong>.
             </li>
             <li className="step-list-item text-sm text-foreground">
-              Paste the configuration into the <strong>Descriptor</strong> box and choose{' '}
-              <strong>Apply</strong>.
+              Paste the {fileName} into the box Sparrow labels{' '}
+              <strong>Descriptor</strong>, then choose <strong>Apply</strong>.
             </li>
             <li className="step-list-item text-sm text-foreground">
               Sparrow fills in each signer for you. Check that it says the same number of
@@ -202,14 +269,14 @@ export function WalletGuideStep({
                 <>
                   Check it worked. The balance must match the balance shown above. Then open the{' '}
                   <strong>Addresses</strong> tab and confirm the first receive address is the
-                  escrow address shown above. Sparrow can accept a configuration and quietly
+                  escrow address shown above. Sparrow can accept a {fileName} and quietly
                   build a different wallet, and it will not warn you. {mismatchAdvice}
                 </>
               )}
             </li>
             <li className="step-list-item text-sm text-foreground">
               To move funds, use the <strong>Send</strong> tab.{' '}
-              {descriptorHasPrivateKey
+              {isPasswordPath
                 ? 'Sparrow already holds your signing key and will sign for you.'
                 : 'Connect your hardware wallet when Sparrow asks for a signature, and approve it on the device.'}
             </li>
@@ -231,13 +298,13 @@ export function WalletGuideStep({
               Open Specter Desktop and choose <strong>Add new wallet</strong>.
             </li>
             <li className="step-list-item text-sm text-foreground">
-              Choose the option to import from a descriptor, paste the configuration, and
-              choose <strong>Import</strong>.
+              Choose the option Specter labels <strong>import from a descriptor</strong>,
+              paste the {fileName}, and choose <strong>Import</strong>.
             </li>
             <li className="step-list-item text-sm text-foreground">
-              If Specter refuses it with a message about the derivation not being supported,
-              it cannot open this wallet. Use Sparrow or Bitcoin Core instead. Nothing is
-              wrong with your funds.
+              If Specter refuses it with a message saying it cannot handle the way this
+              wallet is set up, it cannot open this wallet. Use Sparrow or Bitcoin Core
+              instead. Nothing is wrong with your funds.
             </li>
             <li className="step-list-item text-sm text-foreground">
               Check the signers it lists and confirm.
@@ -262,7 +329,7 @@ export function WalletGuideStep({
           <div className="mb-4 rounded-[var(--radius-base)] border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning-text">
             <strong>Advanced users only.</strong> This needs a fully synced Bitcoin Core node
             and the console. If that is not familiar, use Sparrow instead. Bitcoin Core is the
-            only one of these that always honours the configuration exactly as written.
+            only one of these that always honours the {fileName} exactly as written.
           </div>
           <ol className="step-list space-y-3">
             <li className="step-list-item text-sm text-foreground">
@@ -276,7 +343,7 @@ export function WalletGuideStep({
               </code>
             </li>
             <li className="step-list-item text-sm text-foreground">
-              Load the configuration, replacing PASTE_HERE with the text you copied above:
+              Load the {fileName}, replacing PASTE_HERE with the text you copied above:
               <code className="mt-1 block break-all rounded bg-accent px-1.5 py-0.5 text-xs font-mono">
                 {'importdescriptors \'[{"desc":"PASTE_HERE","timestamp":0,"range":[0,100]}]\''}
               </code>
@@ -310,7 +377,7 @@ export function WalletGuideStep({
             onClick={onBackToDescriptor}
             className="btn-outline w-full rounded-[var(--radius-cta)] border border-border px-5 py-2.5 text-sm font-medium text-foreground hover:bg-accent"
           >
-            Back to Descriptor
+            Back to {fileNameTitle}
           </button>
         )}
         <button

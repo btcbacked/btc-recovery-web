@@ -43,8 +43,8 @@ export function UploadStep({ onFileLoaded }: UploadStepProps) {
         <p className="font-medium text-foreground">What is the recovery file?</p>
         <p className="mt-1">
           When you created your BTCBacked contract, a <code className="font-mono">.json</code> file
-          was downloaded to your device. It contains your encrypted key material and wallet
-          configuration. Check your Downloads folder or wherever you saved it at setup.
+          was downloaded to your device. It contains your encrypted key material and your escrow
+          file. Check your Downloads folder or wherever you saved it at setup.
         </p>
       </div>
 

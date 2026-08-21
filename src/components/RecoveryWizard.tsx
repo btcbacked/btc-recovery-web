@@ -449,9 +449,6 @@ export function RecoveryWizard() {
   const showDerivationNotice =
     !cannotDeriveEscrow && !isStandardDerivation && !summaryCarriesNotice
 
-  const descriptorHasPrivateKey =
-    wizard.parsedDescriptor?.keys.some((k) => k.isPrivate) ?? false
-
   // Shown on the three screens where the path is about to matter: before the
   // password is typed, on the device screen, and on the screen that hands over
   // the descriptor. It is deliberately not shown on the transaction screens,
@@ -565,7 +562,12 @@ export function RecoveryWizard() {
             <div key="guide" className="animate-step-enter">
               <WalletGuideStep
                 descriptor={activeDescriptor}
-                descriptorHasPrivateKey={descriptorHasPrivateKey}
+                /* The file's own record of where the key lives, passed through
+                   unread. Absent only before a file is loaded, when there is no
+                   descriptor to name either; an empty string is not the
+                   password source, so the screen says "escrow file", which is
+                   the claim that cannot be false. */
+                keySource={wizard.recoveryFile?.userKey.keySource ?? ''}
                 escrowAddress={escrowAddress}
                 balance={walletState.balance}
                 depositCount={walletState.utxos.length}

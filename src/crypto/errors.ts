@@ -39,12 +39,11 @@ export class RecoveryError extends Error {
  */
 export const KEY_MISMATCH_NEXT_STEPS =
   'What to do next:\n' +
-  '• Take this file and your password to a Bitcoin professional you ' +
-  'trust. Everything needed is in the file, and none of it depends on ' +
-  'BTCBacked still being reachable.\n' +
   '• Keep this file and your password. Your password still rebuilds your ' +
   'wallet, so the key itself is not lost, and this file carries the escrow ' +
   'details needed to spend from it.\n' +
+  '• Everything needed is in the file, and none of it depends on BTCBacked ' +
+  'still being reachable.\n' +
   '• If you hold more than one recovery file for this contract, open each ' +
   'one here. A file that passes the checks in this tool is the one to work from.'
 
@@ -101,10 +100,23 @@ export const ESCROW_UNSUPPORTED_HEADLINE = 'This page cannot open this escrow.'
  * three causes are one fact to the customer and this wording is the one that
  * was approved.
  */
+/**
+ * How a message that reports an unusable file is allowed to end.
+ *
+ * There is no referral in this catalogue and there is not meant to be one. An
+ * earlier version sent the reader to "a Bitcoin professional you trust", which
+ * was ruled out: this tool cannot vouch for anyone, and naming a stranger as
+ * the next step for someone holding a file with their key in it is advice we
+ * are not in a position to give. What is left is the truth, which is also the
+ * reassurance the reader actually needs. A message ending here has no next step
+ * and that is intended.
+ */
+const KEY_STILL_YOURS = 'Your Bitcoin has not moved and your key is still yours.'
+
 export const ESCROW_UNSUPPORTED_BODY =
   'Your recovery file was set up in a way this page does not handle, so it ' +
-  'will not show you an address. Your Bitcoin has not moved and your key is ' +
-  'still yours.'
+  'will not show you an address. ' +
+  KEY_STILL_YOURS
 
 export const ESCROW_UNSUPPORTED = `${ESCROW_UNSUPPORTED_HEADLINE} ${ESCROW_UNSUPPORTED_BODY}`
 
@@ -114,28 +126,30 @@ export const ERROR_MESSAGES: Record<RecoveryErrorCode, string> = {
   MALFORMED_FILE:
     'This recovery file is missing information it needs, or part of it cannot be read. ' +
     'If you hold another copy of the file, open that one. If this is your only copy, keep ' +
-    'it and your password and take them to a Bitcoin professional you trust.',
+    `it and your password. ${KEY_STILL_YOURS}`,
   UNSUPPORTED_VERSION:
     'This recovery file uses a newer format version than this tool can read. There is no ' +
     'newer version of this tool to fetch. Keep the file and your password: everything ' +
-    'needed to recover your key is inside the file, so take them to a Bitcoin ' +
-    'professional you trust.',
+    `needed to recover your key is inside the file. ${KEY_STILL_YOURS}`,
   UNSUPPORTED_PROFILE:
     'This recovery file rebuilds your key by a method this tool does not know. Keep the ' +
-    'file and your password: everything needed to recover your key is inside the file, so ' +
-    'take them to a Bitcoin professional you trust.',
+    `file and your password: everything needed to recover your key is inside the file. ${KEY_STILL_YOURS}`,
   HARDWARE_KEY:
-    'This key is held on a hardware wallet, so there is no password to enter. Import the ' +
-    'wallet configuration, called a descriptor, into your wallet software instead.',
+    'This key is held on a hardware wallet, so there is no password to enter. Import your ' +
+    'escrow file into your wallet software instead. Some wallet apps call it a descriptor.',
   FINGERPRINT_MISMATCH:
     'The password you entered does not match this recovery file. Please check your password and try again.',
   KEY_MISMATCH: KEY_MISMATCH_INCONSISTENT_FILE,
   DERIVATION_ERROR:
     'Your key could not be rebuilt from this file. Rebuilding is exact, so trying again ' +
-    'gives the same result. Keep the file and your password and take them to a Bitcoin ' +
-    'professional you trust.',
-  DESCRIPTOR_ERROR:
-    'The wallet configuration in this file could not be prepared for another wallet.',
+    `gives the same result. Keep the file and your password. ${KEY_STILL_YOURS}`,
+  /*
+   * Names no object on purpose. This fires on both paths, so "signing file" is
+   * false for a device customer and "escrow file" understates what a password
+   * customer is holding. There is no single correct name here, so the message
+   * does not reach for one.
+   */
+  DESCRIPTOR_ERROR: 'This file could not be prepared for another wallet.',
   NETWORK_ERROR:
     'A network error occurred while communicating with the blockchain API. Check your connection.',
   PSBT_ERROR:
