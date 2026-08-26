@@ -27,7 +27,7 @@ function makeValidPasswordFile(overrides: Record<string, unknown> = {}): Recover
       fingerprint: 'ABCD1234',
     },
     ...overrides,
-  } as RecoveryFile
+  }
 }
 
 function makeValidColdCardFile(overrides: Record<string, unknown> = {}): RecoveryFile {
@@ -48,7 +48,7 @@ function makeValidColdCardFile(overrides: Record<string, unknown> = {}): Recover
       fingerprint: '5678EF90',
     },
     ...overrides,
-  } as RecoveryFile
+  }
 }
 
 // ---------------------------------------------------------------------------

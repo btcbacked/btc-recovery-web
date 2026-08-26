@@ -32,7 +32,6 @@ export {
 } from './child-derivation'
 
 // Address derivation
-export { deriveMultisigAddress } from './address'
 export type { DerivedAddress } from './address'
 
 // Blockchain API
