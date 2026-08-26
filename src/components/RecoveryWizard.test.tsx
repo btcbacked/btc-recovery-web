@@ -190,14 +190,6 @@ describe('hardware path — escrow address and balance', () => {
     expect(screen.getByText(/address above is still correct/i)).toBeTruthy()
   })
 
-  it('tells the user the wallet must show this exact address and balance', async () => {
-    loadFile(recoveryJson())
-    confirmInfo()
-
-    await screen.findByText(EXPECTED_ADDRESS)
-    expect(screen.getByText(/must show this exact address/i)).toBeTruthy()
-  })
-
   it('carries the address and balance through to the import instructions', async () => {
     loadFile(recoveryJson())
     confirmInfo()
@@ -242,9 +234,11 @@ describe('an escrow other wallet software will disagree with', () => {
     confirmInfo()
 
     expect(await screen.findByText(NOTICE)).toBeTruthy()
-    // The check-it-against-your-wallet line is the one thing that would be
-    // false here, and it is the one thing that must not render.
-    expect(screen.queryByText(/must show this exact address/i)).toBeNull()
+    // The line this used to guard against, telling the reader to compare the
+    // address against another wallet and to stop if the two differ, is gone
+    // from `EscrowSummary`, which is what this screen renders. It still exists
+    // in `WalletGuideStep`, and the two tests at the end of this block are
+    // where both of its branches are asserted.
   })
 
   it('still shows the address and the balance, because both are correct', async () => {
