@@ -42,11 +42,12 @@ export function DerivationNotice() {
  * Shown when no escrow address could be produced from the recovery file, so
  * this page will neither show an address nor sign.
  *
- * Three different things land here and the copy has to be true of all of them:
+ * Four different things land here and the copy has to be true of all of them:
  * a child derivation `childIndices` refuses, an extended key `address.ts`
- * cannot read, and a descriptor `parseDescriptor` cannot read at all. The
- * approved wording covers all three: a file this page cannot read is a file set
- * up in a way this page does not handle.
+ * cannot read, a descriptor `parseDescriptor` cannot read at all, and an
+ * address that disagrees with the one the file records for this escrow. The
+ * approved wording covers all four: a file this page cannot reproduce an
+ * escrow from is a file set up in a way this page does not handle.
  *
  * The words are not written here. They come from `ESCROW_UNSUPPORTED`, which is
  * the same string the refusal throws with, so the notice on screen and the

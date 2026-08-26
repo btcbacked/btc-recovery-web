@@ -24,6 +24,10 @@ function fileWith(recordedPath: string, bracketPath: string): RecoveryFile {
     outputDescriptor:
       `wsh(sortedmulti(2,[bbbbbbbb/${bracketPath}]${XPUB}/0/*,` +
       `[cccccccc/88h/1h/0h/0h]${XPUB}/0/*))`,
+    // Neither field is what this suite is about, and a file that states
+    // neither is the shape every customer holds today.
+    escrowAddress: null,
+    cosigners: null,
     context: {
       contractId: 'c',
       role: 'borrower',

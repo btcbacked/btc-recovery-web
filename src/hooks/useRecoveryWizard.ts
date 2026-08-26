@@ -57,11 +57,17 @@ export function useRecoveryWizard() {
   }, [])
 
   const setRecoveryFile = useCallback((file: RecoveryFile) => {
-    // The warning belongs to whichever file is loaded, so a second upload must
-    // not inherit the first one's.
+    // Everything derived from a file belongs to THAT file, so a second upload
+    // must not inherit the first one's. `parsedDescriptor` is the one that
+    // matters: it is the gate both sign handlers read, and the wizard checks it
+    // against the NEW file's recorded escrow address, so a stale one from file
+    // A judged against file B is a comparison of two unrelated escrows.
     setState((prev) => ({
       ...prev,
       recoveryFile: file,
+      descriptor: null,
+      xprv: null,
+      parsedDescriptor: null,
       error: null,
       originPathWarning: null,
       descriptorUnreadable: false,

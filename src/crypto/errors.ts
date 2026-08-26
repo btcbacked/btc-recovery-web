@@ -91,16 +91,6 @@ export const KEY_MISMATCH_INCONSISTENT_FILE =
 export const ESCROW_UNSUPPORTED_HEADLINE = 'This page cannot open this escrow.'
 
 /**
- * Everything after the headline, and the half that carries the promise.
- *
- * It says the file was set up in a way this page does not handle, and that is
- * true of all three refusal causes, the unreadable descriptor included: a file
- * this page cannot read is a file set up in a way this page does not handle.
- * Naming the cause more precisely was considered and rejected, because the
- * three causes are one fact to the customer and this wording is the one that
- * was approved.
- */
-/**
  * How a message that reports an unusable file is allowed to end.
  *
  * There is no referral in this catalogue and there is not meant to be one. An
@@ -113,6 +103,17 @@ export const ESCROW_UNSUPPORTED_HEADLINE = 'This page cannot open this escrow.'
  */
 const KEY_STILL_YOURS = 'Your Bitcoin has not moved and your key is still yours.'
 
+/**
+ * Everything after the headline, and the half that carries the promise.
+ *
+ * It says the file was set up in a way this page does not handle, and that is
+ * true of all four refusal causes, the unreadable descriptor and the address
+ * that disagrees with the file's own record included: a file this page cannot
+ * reproduce an escrow from is a file set up in a way this page does not handle.
+ * Naming the cause more precisely was considered and rejected, because the
+ * causes are one fact to the customer and this wording is the one that was
+ * approved.
+ */
 export const ESCROW_UNSUPPORTED_BODY =
   'Your recovery file was set up in a way this page does not handle, so it ' +
   'will not show you an address. ' +

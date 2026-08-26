@@ -94,3 +94,64 @@ export function deriveMultisigAddress(
     publicKeys: sortedKeys,
   }
 }
+
+/**
+ * The only address index an escrow has.
+ *
+ * An escrow is a single address, not a range, so this is the index every
+ * caller wants. It is not an assumption about where the money is: after
+ * `resolveCosignerPositions` a leg that sits elsewhere is pinned to its own
+ * child and ignores this index entirely, and a leg still ranged is one the file
+ * says nothing about.
+ */
+const ESCROW_ADDRESS_INDEX = 0
+
+/**
+ * The escrow's address, checked against the address the file records for it.
+ *
+ * This is the safety net for everything `resolveCosignerPositions` could not
+ * settle. A leg whose position is unknown keeps its wildcard and is derived at
+ * index 0, which is a guess; without this check that guess reaches the customer
+ * as a fact, with an address, a zero balance and no warning. That is the exact
+ * shape of the failure on the two funded escrows.
+ *
+ * `expectedAddress` of null REMOVES THE CHECK and is not a pass. The file
+ * either predates the field or the platform could not state the address, and in
+ * both cases the address returned here is uncorroborated rather than verified.
+ *
+ * A mismatch throws `ESCROW_UNSUPPORTED`, which is the fourth cause to land on
+ * that one approved refusal and is true of this one too: an escrow this page
+ * cannot reproduce is an escrow this page does not handle. The wizard turns the
+ * throw into a null address, which is what makes the refusal visible and the
+ * signing buttons dead. Returning the address with a caveat was the other
+ * option and is worse: the customer came here to move money, and an address
+ * they can copy is one they will send to.
+ */
+export function deriveEscrowAddress(
+  parsed: ParsedDescriptor,
+  network: Network,
+  expectedAddress: string | null,
+): DerivedAddress {
+  const derived = deriveMultisigAddress(parsed, ESCROW_ADDRESS_INDEX, network)
+
+  // Compared case insensitively. Every address this can derive is bech32,
+  // because `parseDescriptor` accepts only `wsh`, and BIP-173 makes the
+  // uppercase form of a bech32 address the same address. Comparing the bytes
+  // would refuse a file whose recorded address is written in the uppercase
+  // form, which kills the sign button over a difference that is not one.
+  if (
+    expectedAddress !== null &&
+    derived.address.toLowerCase() !== expectedAddress.toLowerCase()
+  ) {
+    // Both values are public addresses, so naming them in `detail` leaks
+    // nothing. `detail` is never rendered; `userMessage` is what reaches the
+    // screen and it is the approved wording, unchanged.
+    throw new RecoveryError(
+      'ADDRESS_ERROR',
+      ESCROW_UNSUPPORTED,
+      `Derived ${derived.address}, but the recovery file records ${expectedAddress}`,
+    )
+  }
+
+  return derived
+}
