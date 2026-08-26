@@ -1,6 +1,7 @@
 import type { BIP32Interface } from 'bip32'
 import { RecoveryError, ESCROW_UNSUPPORTED } from './errors'
-import type { ParsedKeyEntry } from './descriptor-parser'
+import type { ParsedDescriptor, ParsedKeyEntry } from './descriptor-parser'
+import type { RecoveryFileCosigner } from './recovery-file'
 
 /**
  * The child derivation a descriptor names for ONE key, resolved to indices.
@@ -36,11 +37,16 @@ export const RANGED_CHILD_DERIVATION = '0/*'
  *
  * The refusal is what makes that safe, not the address it withholds. Nothing
  * downstream compares a PSBT against the escrow address to decide whether the
- * PSBT belongs to this escrow. The address has exactly one consumer,
- * `psbt-finalizer.ts`, which uses it to label an output as change in the
- * summary the customer reads, so an address handed back after a refusal would
- * be checked by nobody. What actually stops the wrong signature is that the
- * wizard's signing guards are then left with no address to run with.
+ * PSBT belongs to this escrow. Downstream of derivation NO CONSUMER CHECKS it:
+ * `psbt-builder.ts` spends to it as the change output and `psbt-finalizer.ts`
+ * labels an output as change with it, and neither compares it against anything,
+ * so an address handed back after a refusal would be checked by nobody. What
+ * actually stops the wrong signature is that the wizard's signing guards are
+ * then left with no address to run with.
+ *
+ * `deriveEscrowAddress` checks a derived address against the one the recovery
+ * file records, but that is a check ON the address, not a consumer of it, and
+ * it never runs on a refusal: there is no address to compare.
  */
 const REQUIRED_COMPONENT_COUNT = 2
 
@@ -121,6 +127,95 @@ export function childIndices(
     }
     return value
   })
+}
+
+/**
+ * Fill in each ranged key's wildcard from the positions the file records.
+ *
+ * The descriptor is left alone and a resolved copy is returned, because a
+ * position that a wallet cannot be trusted with is exactly why the platform
+ * stopped writing it into the descriptor: a descriptor with fixed child
+ * positions was bench tested against Sparrow, which imported it, flattened it
+ * to raw pubkeys, derived every leg at index 0 anyway and showed a confidently
+ * wrong address. So the positions travel beside the descriptor and only a
+ * reader that opts in, here, applies them.
+ *
+ * The output is an ordinary `ParsedDescriptor` whose ranged legs have become
+ * pinned ones, which is a shape every consumer downstream already handles:
+ * `deriveChildNode` derives it, `childPathSuffix` writes it into a PSBT, and
+ * the signer finds the key by the same two components. Nothing else has to
+ * learn about `cosigners` at all.
+ *
+ * THE SIX RULES, stated here because this is the only place they are written
+ * down that ships. Spec section 3.6 has them too, but that spec lives in
+ * another repo on an unmerged branch and has never been released, so it is a
+ * reference and not an authority. The `// Rule N.` markers below say which line
+ * implements which.
+ *
+ *  1. A leg the descriptor already pins to a fixed child keeps it: the
+ *     descriptor wins over any `keyIndex` that disagrees with it.
+ *  2. Only the ranged `0/*` suffix is a wildcard for a position to fill in.
+ *  3. A raw pubkey leg takes no `keyIndex`. Holds by construction here, because
+ *     `ParsedKeyEntry` can only carry an extended key, so such a leg never
+ *     reaches this function. It is DROPPED at parse time instead, which is the
+ *     hazard written down in `cosigner-positions.test.ts`.
+ *  4. `keyIndex: null` means unknown, and unknown is never 0, so the leg keeps
+ *     its wildcard. NOT IMPLEMENTED: the rule also offers a scanning fallback,
+ *     trying child indices until one reproduces the escrow address. This reader
+ *     does not scan. An unknown leg is derived at index 0 and the
+ *     `escrowAddress` check in `address.ts` is the only thing that catches it.
+ *  5. No array, an empty array, and a leg the array does not mention all mean
+ *     the same as unknown.
+ *  6. Legs and entries are joined by fingerprint, folded to lowercase on both
+ *     sides. A fingerprint naming more than one leg, or claimed by more than one
+ *     entry, collapses to unknown rather than letting the first or the last one
+ *     win. NOT IMPLEMENTED: the rule breaks that tie by also joining on `role`,
+ *     which is the two legs sharing a fingerprint case the backend documents at
+ *     `recovery-package-response.dto.ts:63-67`. This reader fails closed and
+ *     leaves both legs ranged. The rule also warns against comparing
+ *     `userKey.fingerprint` with `cosigners[].fingerprint`; nothing here reads
+ *     `userKey` at all, so that half cannot be got wrong.
+ */
+export function resolveCosignerPositions(
+  parsed: ParsedDescriptor,
+  cosigners: readonly RecoveryFileCosigner[] | null | undefined,
+): ParsedDescriptor {
+  // Rule 5.
+  if (!cosigners || cosigners.length === 0) return parsed
+
+  // Rule 6, from the descriptor's side.
+  const legsPerFingerprint = new Map<string, number>()
+  for (const key of parsed.keys) {
+    const fingerprint = key.fingerprint.toLowerCase()
+    legsPerFingerprint.set(fingerprint, (legsPerFingerprint.get(fingerprint) ?? 0) + 1)
+  }
+
+  // Rule 6, from the array's side. Two entries naming one fingerprint is the
+  // same ambiguity read from the other end, so it collapses to unknown rather
+  // than letting whichever entry came last decide.
+  const positions = new Map<string, number | null>()
+  for (const cosigner of cosigners) {
+    const fingerprint = cosigner.fingerprint.toLowerCase()
+    positions.set(fingerprint, positions.has(fingerprint) ? null : cosigner.keyIndex)
+  }
+
+  return {
+    ...parsed,
+    keys: parsed.keys.map((key) => {
+      // Rules 1 and 2.
+      if (key.childDerivation !== RANGED_CHILD_DERIVATION) return key
+
+      const fingerprint = key.fingerprint.toLowerCase()
+      // Rule 6.
+      if (legsPerFingerprint.get(fingerprint) !== 1) return key
+
+      // Rule 4, and rule 5 again for a leg the array does not mention.
+      const keyIndex = positions.get(fingerprint)
+      if (keyIndex === undefined || keyIndex === null) return key
+
+      return { ...key, childDerivation: `0/${keyIndex}` }
+    }),
+  }
 }
 
 /**
