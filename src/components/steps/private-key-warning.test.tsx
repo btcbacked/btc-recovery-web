@@ -399,10 +399,24 @@ describe('ResultStep names the signing file', () => {
 
     try {
       render(<ResultStep descriptor={UNREADABLE_WITH_KEY} onContinue={() => {}} />)
+
+      // ResultStep releases the object URL on a 100ms timer, so Firefox has
+      // time to start the download. Fake timers make that fire HERE, while the
+      // two stubs above are still installed.
+      //
+      // Without this the timer lands AFTER the finally block below has put the
+      // originals back, and in jsdom the original of both is `undefined`. The
+      // run then reports `URL.revokeObjectURL is not a function` as an uncaught
+      // exception and `npm test` exits 1 while every test still reads as
+      // passing. The deploy workflow gates on that exit code, so it is the
+      // difference between the tool shipping and not.
+      vi.useFakeTimers()
       fireEvent.click(screen.getByRole('button', { name: /Download as \.txt/i }))
+      vi.runAllTimers()
 
       expect(downloaded).toEqual(['btcbacked-signing-file.txt'])
     } finally {
+      vi.useRealTimers()
       click.mockRestore()
       URL.createObjectURL = createObjectURL
       URL.revokeObjectURL = revokeObjectURL
