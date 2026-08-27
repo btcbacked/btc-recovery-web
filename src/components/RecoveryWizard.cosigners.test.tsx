@@ -220,7 +220,7 @@ describe('an ordinary escrow with every leg at zero', () => {
     reachHardwareStep(fileJson({ escrowAddress: address, cosigners: allZero }))
     await screen.findByText(address)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     const card = screen.getByRole('tablist').parentElement
@@ -436,7 +436,7 @@ describe('a password customer whose leg sits away from zero', () => {
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    await screen.findByRole('button', { name: /Next: Import into Wallet/i })
+    await screen.findByRole('button', { name: /^Continue$/i })
   }
 
   it('is a file the ranged reading gets wrong', () => {
@@ -445,7 +445,7 @@ describe('a password customer whose leg sits away from zero', () => {
 
   it('resolves the positions onto the rebuilt descriptor, not just the file one', async () => {
     await reachResult()
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
 
     expect(screen.getByText(truncateHash(escrowAddress, 12))).toBeTruthy()
     expect(screen.queryByText(truncateHash(rangedAddress, 12))).toBeNull()
@@ -472,7 +472,7 @@ describe('a password customer whose leg sits away from zero', () => {
   /** Password, then the walk a customer takes to reach the sign button. */
   async function reachTheSignButton(fileJson: string) {
     await reachResult(fileJson)
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
     fireEvent.click(screen.getByRole('button', { name: /Sign Existing PSBT/i }))
     fireEvent.change(screen.getByPlaceholderText(/cHNidP8BAH/), {
       target: { value: signablePsbtBase64 },

@@ -45,6 +45,20 @@ type WalletGuideStepProps = {
 const tabs = ['Sparrow', 'Specter', 'Bitcoin Core'] as const
 type Tab = (typeof tabs)[number]
 
+/*
+ * The last child index the Bitcoin Core steps scan and print. One fact, not
+ * two: `importdescriptors` decides how far the node scans and `deriveaddresses`
+ * decides what the customer compares against, so the two must not drift apart.
+ *
+ * A bound above 0 is the whole point. The descriptor handed out is ranged on
+ * every leg, and each loan sits at its own child index under one shared
+ * account, so a customer's second loan is at index 1 and their third at index
+ * 2. Printing index 0 alone told every customer past their first loan that
+ * their address did not match, on a screen that says a mismatch means stop and
+ * move no Bitcoin.
+ */
+const ADDRESS_SCAN_END = 100
+
 // Stable IDs for aria-controls / aria-labelledby
 const tabId = (tab: Tab) => `wallet-tab-${tab.replace(/\s+/g, '-').toLowerCase()}`
 const panelId = (tab: Tab) => `wallet-panel-${tab.replace(/\s+/g, '-').toLowerCase()}`
@@ -118,8 +132,9 @@ export function WalletGuideStep({
   /* `fileName` starts with a vowel on one branch and a consonant on the other,
    * so any sentence that puts an indefinite article in front of it has to pick
    * the article from the same condition. Hard coding "a" rendered "a escrow
-   * file" for every hardware customer. */
-  const fileNameArticle = isPasswordPath ? 'a' : 'an'
+   * file" for every hardware customer. Every sentence below now says "the",
+   * which is why no article helper survives here. Bring one back with the
+   * sentence that needs it, never without it. */
   const fileNameTitle = isPasswordPath ? 'Signing File' : 'Escrow File'
 
   /*
@@ -272,11 +287,9 @@ export function WalletGuideStep({
                 </>
               ) : (
                 <>
-                  Check it worked. The balance must match the balance shown above. Then open the{' '}
-                  <strong>Addresses</strong> tab and confirm the first receive address is the
-                  escrow address shown above. Sparrow can accept {fileNameArticle} {fileName} and
-                  quietly
-                  build a different wallet, and it will not warn you. {mismatchAdvice}
+                  Check it worked. The balance must match the balance shown above, and the escrow
+                  address shown above must appear in the <strong>Addresses</strong> tab.{' '}
+                  {mismatchAdvice}
                 </>
               )}
             </li>
@@ -351,7 +364,7 @@ export function WalletGuideStep({
             <li className="step-list-item text-sm text-foreground">
               Load the {fileName}, replacing PASTE_HERE with the text you copied above:
               <code className="mt-1 block break-all rounded bg-accent px-1.5 py-0.5 text-xs font-mono">
-                {'importdescriptors \'[{"desc":"PASTE_HERE","timestamp":0,"range":[0,100]}]\''}
+                {`importdescriptors '[{"desc":"PASTE_HERE","timestamp":0,"range":[0,${ADDRESS_SCAN_END}]}]'`}
               </code>
             </li>
             <li className="step-list-item text-sm text-foreground">
@@ -361,10 +374,10 @@ export function WalletGuideStep({
             </li>
             <li className="step-list-item font-medium text-sm text-foreground">
               {cannotDeriveEscrow
-                ? 'Check what Bitcoin Core shows. This page has no address and no balance for you to compare against, so read both from Bitcoin Core itself. This prints the address:'
-                : 'Check it worked. This must print the same address as the one shown above:'}
+                ? `Check what Bitcoin Core shows. This page has no address and no balance for you to compare against, so read both from Bitcoin Core itself. This prints addresses 0 to ${ADDRESS_SCAN_END}:`
+                : `Check it worked. This prints addresses 0 to ${ADDRESS_SCAN_END}, and the escrow address shown above must appear among them:`}
               <code className="mt-1 block break-all rounded bg-accent px-1.5 py-0.5 text-xs font-mono">
-                {'deriveaddresses "PASTE_HERE" [0,0]'}
+                {`deriveaddresses "PASTE_HERE" [0,${ADDRESS_SCAN_END}]`}
               </code>
               Then run{' '}
               <code className="rounded bg-accent px-1 text-xs font-mono">getbalance</code>
