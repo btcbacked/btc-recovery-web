@@ -5,7 +5,7 @@ import {
   PrivateKeyWarning,
   privateKeyWarningDescribedBy,
 } from '@/components/PrivateKeyWarning'
-import { describeKeySource } from '@/crypto'
+import { describeKeySourceDevice } from '@/crypto'
 import type { RecoveryFile } from '@/crypto'
 
 /** Names the key block for assistive technology. Reuses the visible label. */
@@ -39,6 +39,8 @@ export function HardwareStep({
   onContinue,
   onBack,
 }: HardwareStepProps) {
+  const deviceName = describeKeySourceDevice(file.userKey.keySource)
+
   const handleDownload = () => {
     const blob = new Blob([descriptor], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
@@ -62,9 +64,13 @@ export function HardwareStep({
         <h2 className="text-[var(--text-auth-heading)] font-semibold text-foreground">
           Hardware Wallet Key
         </h2>
-        <p className="mt-1 text-sm font-medium text-foreground">
-          {describeKeySource(file.userKey.keySource)}
-        </p>
+        {/* Only when the file names an actual device. The generic label is
+            "Hardware wallet", which under a heading reading "Hardware Wallet
+            Key" is the same sentence twice, and every escrow created now
+            records the generic value, so nearly every customer saw it. */}
+        {deviceName !== null && (
+          <p className="mt-1 text-sm font-medium text-foreground">{deviceName}</p>
+        )}
         <p className="mt-2 text-sm text-muted-foreground">
           There is no password to enter, because your private key stays on the device and
           never reaches this browser. Copy the escrow file below into your wallet
@@ -127,7 +133,7 @@ export function HardwareStep({
           onClick={onContinue}
           className="btn-primary w-full rounded-[var(--radius-cta)] px-5 py-2.5 text-sm font-medium text-primary-foreground"
         >
-          View Import Instructions
+          View Export Instructions
         </button>
         <button
           type="button"
