@@ -5,7 +5,13 @@ import { RecoveryError } from './errors'
 import { Buffer } from 'buffer'
 
 export type PsbtOutput = {
-  address: string
+  /**
+   * The decoded address, or null where the output script does not decode to
+   * one. An OP_RETURN or any other non standard script has no address, and
+   * null says so rather than handing the screen a placeholder that renders as
+   * a destination a customer can copy and look up.
+   */
+  address: string | null
   value: number
   isChange: boolean
 }
@@ -19,6 +25,12 @@ export type PsbtAnalysis = {
   /** Fee rate in sat/vB, or null if the transaction size is unavailable. */
   feeRate: number | null
   outputs: PsbtOutput[]
+  /**
+   * Each input's own value in satoshis, in input order, or null where the PSBT
+   * does not carry it. A PSBT that supplies only `nonWitnessUtxo` has no value
+   * here, and null says so rather than passing a confident 0 to the screen.
+   */
+  inputValues: (number | null)[]
   signatureCount: number[]
   isFullySigned: boolean
   requiredSignatures: number
@@ -42,11 +54,18 @@ export function analyzePsbt(
 
   let totalInputBigInt = 0n
   const signatureCount: number[] = []
+  const inputValues: (number | null)[] = []
 
   for (let i = 0; i < inputCount; i++) {
     const input = psbt.data.inputs[i]
     if (input?.witnessUtxo) {
       totalInputBigInt += BigInt(input.witnessUtxo.value)
+      inputValues.push(Number(input.witnessUtxo.value))
+    } else {
+      // The value is genuinely absent from this input, so record it as unknown.
+      // The total is left exactly as it was, which keeps this change out of the
+      // fee arithmetic.
+      inputValues.push(null)
     }
     // Count partial signatures. Also check for finalScriptWitness which
     // indicates the input is already finalized (signatures are embedded).
@@ -62,11 +81,14 @@ export function analyzePsbt(
   }
 
   const outputs: PsbtOutput[] = txOutputs.map((out) => {
-    let address = ''
+    let address: string | null = null
     try {
       address = bitcoin.address.fromOutputScript(out.script, net)
     } catch {
-      address = 'Unknown'
+      // The script decodes to no address at all. Same idiom as inputValues
+      // above: null, not the literal 'Unknown', which the screens rendered as
+      // the destination and offered a copy control for.
+      address = null
     }
     return {
       address,
@@ -132,6 +154,7 @@ export function analyzePsbt(
     fee,
     feeRate,
     outputs,
+    inputValues,
     signatureCount,
     isFullySigned,
     requiredSignatures,

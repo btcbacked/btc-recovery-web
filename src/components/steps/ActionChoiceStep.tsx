@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Send, FileInput, ExternalLink, ArrowLeft } from 'lucide-react'
 import { CopyButton } from '@/components/CopyButton'
-import { formatBtc, truncateHash } from '@/lib/btcFormat'
+import { formatBtc } from '@/lib/btcFormat'
 
 type ActionChoiceStepProps = {
   escrowAddress: string
@@ -145,14 +145,20 @@ export function ActionChoiceStep({
           <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Escrow Address ({network})
           </p>
-          <div className="flex items-center justify-between gap-3">
-            <code className="flex-1 truncate font-mono text-xs text-foreground">
-              {truncateHash(escrowAddress, 12)}
+          {/* The full address, wrapped. It used to go through
+              truncateHash(escrowAddress, 12) AND carry Tailwind's `truncate`,
+              so the shortened string was then clipped again by CSS, and the
+              ellipsis CSS adds sat next to the helper's own three dots in the
+              same font with nothing to tell the two apart. A customer checking
+              where their money is has to be able to read the whole thing. */}
+          <div className="flex items-start justify-between gap-3">
+            <code className="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
+              {escrowAddress}
             </code>
             <CopyButton
               text={escrowAddress}
-              label="Copy"
-              className="shrink-0 px-3 py-1.5 text-xs"
+              variant="icon"
+              ariaLabel="Copy escrow address"
             />
           </div>
 

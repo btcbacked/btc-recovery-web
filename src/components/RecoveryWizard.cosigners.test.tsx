@@ -23,7 +23,6 @@ import { deriveMultisigAddress } from '@/crypto/address'
 import { resolveCosignerPositions } from '@/crypto/child-derivation'
 import { deriveSeed, computeFingerprint, deriveXprv, neuterXprv } from '@/crypto/derivation'
 import { getProfile } from '@/crypto/profiles'
-import { truncateHash } from '@/lib/btcFormat'
 import type { RecoveryFileCosigner } from '@/crypto/recovery-file'
 import {
   BORROWER_FINGERPRINT,
@@ -447,8 +446,8 @@ describe('a password customer whose leg sits away from zero', () => {
     await reachResult()
     fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
 
-    expect(screen.getByText(truncateHash(escrowAddress, 12))).toBeTruthy()
-    expect(screen.queryByText(truncateHash(rangedAddress, 12))).toBeNull()
+    expect(screen.getByText(escrowAddress)).toBeTruthy()
+    expect(screen.queryByText(rangedAddress)).toBeNull()
     expect(screen.queryByText(REFUSAL)).toBeNull()
   })
 
@@ -456,8 +455,8 @@ describe('a password customer whose leg sits away from zero', () => {
     await reachResult(mismatchJson)
 
     expect(screen.getByText(REFUSAL)).toBeTruthy()
-    expect(screen.queryByText(truncateHash(rangedAddress, 12))).toBeNull()
-    expect(screen.queryByText(truncateHash(escrowAddress, 12))).toBeNull()
+    expect(screen.queryByText(rangedAddress)).toBeNull()
+    expect(screen.queryByText(escrowAddress)).toBeNull()
   })
 
   // -------------------------------------------------------------------------
