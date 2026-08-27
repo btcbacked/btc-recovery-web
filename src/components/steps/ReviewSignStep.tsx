@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, PenLine, AlertTriangle } from 'lucide-react'
-import { formatBtc, formatSats, truncateHash } from '@/lib/btcFormat'
+import { CopyButton } from '@/components/CopyButton'
+import { formatBtc, formatSats } from '@/lib/btcFormat'
 import type { PsbtAnalysis } from '@/crypto/psbt-finalizer'
 
 type ReviewSignStepProps = {
@@ -55,10 +56,16 @@ export function ReviewSignStep({ analysis, error, onSign, onBack }: ReviewSignSt
           <p className="mt-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             To
           </p>
-          {/* Full address, larger text, not truncated */}
-          <p className="mt-1 break-all font-mono text-sm font-semibold text-foreground">
-            {primaryDestination.address}
-          </p>
+          {primaryDestination.address === null ? (
+            /* Nothing decoded, so this reads Unknown rather than leaving the
+               heading above it standing over an empty line. */
+            <p className="mt-1 text-sm font-medium text-muted-foreground">Unknown</p>
+          ) : (
+            /* Full address, larger text, not truncated */
+            <p className="mt-1 break-all font-mono text-sm font-semibold text-foreground">
+              {primaryDestination.address}
+            </p>
+          )}
         </div>
       )}
 
@@ -69,16 +76,45 @@ export function ReviewSignStep({ analysis, error, onSign, onBack }: ReviewSignSt
         </p>
         <div className="divide-y divide-border rounded-[var(--radius-base)] border border-border">
           {analysis.outputs.map((output, i) => (
-            <div key={i} className="flex items-start justify-between gap-3 px-4 py-3">
+            <div
+              key={i}
+              className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+            >
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <p className="truncate font-mono text-xs text-foreground">
-                    {truncateHash(output.address, 10)}
-                  </p>
-                  {output.isChange && (
-                    <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      change
+                <div className="flex flex-wrap items-start gap-1.5">
+                  {output.address === null ? (
+                    /* The script decodes to no address, so there is nothing to
+                       show and nothing to copy. Offering a copy control here
+                       handed the customer a placeholder word that a block
+                       explorer finds nothing for, leaving them unable to tell
+                       a broken tool from a bad address. */
+                    <span className="min-w-0 flex-1 text-xs font-medium text-muted-foreground">
+                      Unknown
                     </span>
+                  ) : (
+                    <>
+                      {/* The full address, never truncated. The summary above
+                          this table shows the FIRST destination in full, but
+                          every other destination and the change output were
+                          head-and-tail only, and a shortened address cannot
+                          rule out a substitution that matches on the first and
+                          last characters. This row used to shorten twice over:
+                          truncateHash(address, 10) and then Tailwind's
+                          `truncate` clipping what was left. */}
+                      <code className="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
+                        {output.address}
+                      </code>
+                      {output.isChange && (
+                        <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          change
+                        </span>
+                      )}
+                      <CopyButton
+                        text={output.address}
+                        variant="icon"
+                        ariaLabel={`Copy ${output.isChange ? 'change' : 'destination'} address, output ${i + 1} of ${analysis.outputs.length}`}
+                      />
+                    </>
                   )}
                 </div>
               </div>

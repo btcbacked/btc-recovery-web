@@ -374,3 +374,105 @@ describe('the balance announcement', () => {
     expect(screen.getAllByText('Escrow Balance')).toHaveLength(1)
   })
 })
+
+/**
+ * The escrow address in the box at the top of the Choose screen.
+ *
+ * It used to be shortened TWICE. `truncateHash(escrowAddress, 12)` cut it to a
+ * head, three dots and a tail, and the element it went into also carried
+ * Tailwind's `truncate`, which clips whatever is left and appends an ellipsis
+ * of its own. On a narrow phone that hid most of the address, and because the
+ * CSS ellipsis renders in the same monospace font right next to the helper's
+ * own three dots, nothing on screen said that more had been removed.
+ *
+ * The `CopyButton` always copied the whole address, so what was on screen and
+ * what went to the clipboard disagreed. The address is now shown in full and
+ * wrapped, and the tests below pin both halves of that.
+ */
+describe('the escrow address is readable in full', () => {
+  /** What the two layers of shortening used to leave on screen. Written out by
+   *  hand, not computed, so this does not agree with the bug by reusing the
+   *  bug's own helper. The guards in the first test pin it to ADDRESS. */
+  const SHORTENED = 'bcrt1qxyzabc...cdefghijklmn'
+
+  /** The single <code> on this screen, which is the address cell. */
+  function addressCell(): HTMLElement {
+    const cells = document.querySelectorAll('code')
+    if (cells.length !== 1) {
+      throw new Error(`expected one address cell, found ${cells.length}`)
+    }
+    return cells[0] as HTMLElement
+  }
+
+  it('shows the whole address, not the shortened form', () => {
+    // The shortened literal really is this address head-and-tail, so the
+    // absence assertions below are about THIS address.
+    expect(ADDRESS.startsWith('bcrt1qxyzabc')).toBe(true)
+    expect(ADDRESS.endsWith('cdefghijklmn')).toBe(true)
+    expect(ADDRESS.length).toBeGreaterThan(50)
+    expect(SHORTENED.length).toBeLessThan(ADDRESS.length)
+
+    renderStep()
+
+    // Positive partner: the address is on screen character for character, so
+    // these cannot pass by the box simply not rendering.
+    const cell = addressCell()
+    expect(cell.textContent).toBe(ADDRESS)
+    expect(screen.getByText(ADDRESS)).toBeTruthy()
+
+    expect(screen.queryByText(SHORTENED)).toBeNull()
+    expect(cell.textContent).not.toContain('...')
+  })
+
+  it('wraps the address instead of clipping it', () => {
+    renderStep()
+
+    const cell = addressCell()
+    // Positive partner for the class assertions below.
+    expect(cell.textContent).toBe(ADDRESS)
+    expect(cell.className).toContain('font-mono')
+    // break-all lets a 59 character unbroken string wrap inside the box rather
+    // than push the page sideways at a narrow width.
+    expect(cell.className).toContain('break-all')
+    // `truncate` is what clipped the already-shortened string a second time.
+    expect(cell.className).not.toContain('truncate')
+  })
+
+  it('copies the complete address, matching what is now on screen', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+      writable: true,
+    })
+
+    renderStep()
+
+    // Positive partner: what is on screen is the full address, so the clipboard
+    // assertion below is a match rather than a coincidence.
+    expect(addressCell().textContent).toBe(ADDRESS)
+
+    fireEvent.click(screen.getByRole('button', { name: /copy/i }))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    expect(writeText).toHaveBeenCalledWith(ADDRESS)
+    expect(writeText).not.toHaveBeenCalledWith(SHORTENED)
+  })
+
+  it('keeps the balance line in the same box as the full address', () => {
+    renderStep({ balance: 123_456_789 })
+
+    // Both halves of the box are present together: the wrapped address has not
+    // displaced the balance line that sits under it.
+    const cell = addressCell()
+    expect(cell.textContent).toBe(ADDRESS)
+    expect(screen.getByText('Escrow Balance')).toBeTruthy()
+    expect(screen.getByText(/1\.23456789 BTC/)).toBeTruthy()
+
+    // The balance row is a sibling inside the same box as the address, not a
+    // panel that has broken out of it.
+    const box = cell.closest('div.rounded-\\[var\\(--radius-base\\)\\]')
+    expect(box).not.toBeNull()
+    expect(box!.textContent).toContain('Escrow Balance')
+  })
+})
