@@ -33,7 +33,6 @@ import { parseDescriptor } from '@/crypto/descriptor-parser'
 import { deriveMultisigAddress } from '@/crypto/address'
 import { deriveSeed, computeFingerprint, deriveXprv, neuterXprv } from '@/crypto/derivation'
 import { getProfile } from '@/crypto/profiles'
-import { truncateHash } from '@/lib/btcFormat'
 
 // bitcoinjs-lib and bip32 expect a global Buffer, which main.tsx normally supplies.
 ;(globalThis as unknown as { Buffer: typeof Buffer }).Buffer = Buffer
@@ -228,7 +227,7 @@ describe('a balance abandoned mid-flight', () => {
 
     // ---- loan A, funded ----------------------------------------------------
     await recoverToChooseScreen(loanA)
-    await screen.findByText(truncateHash(addrA, 12))
+    await screen.findByText(addrA)
     await settle(500) // the Choose screen debounce fires and the fetch is held
 
     // The positive partner for everything below. Every later assertion says a
@@ -242,14 +241,14 @@ describe('a balance abandoned mid-flight', () => {
     await settle(50)
     fireEvent.click(await screen.findByRole('button', { name: /Start Over/i }))
     await settle(50)
-    expect(screen.queryByText(truncateHash(addrA, 12))).toBeNull()
+    expect(screen.queryByText(addrA)).toBeNull()
 
     // ---- loan B, a different escrow, empty ---------------------------------
     // Loan A's requests are still in the air, deliberately. A slow answer
     // coming back while the customer is already looking at the next loan is
     // the ordering that does the damage, and the one the field produces.
     await recoverToChooseScreen(loanB)
-    await screen.findByText(truncateHash(addrB, 12))
+    await screen.findByText(addrB)
     await settle(500) // loan B's own fetch starts, and is held in turn
 
     // Nobody is waiting for these any more. They land anyway.
@@ -296,7 +295,7 @@ describe('a second recovery file', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Upload a different file/i }))
 
     await recoverToChooseScreen(loanA)
-    await screen.findByText(truncateHash(addrA, 12))
+    await screen.findByText(addrA)
 
     // Read before this file's own fetch has been allowed to return. Nothing
     // has been asked on behalf of THIS file yet, and the previous file's
