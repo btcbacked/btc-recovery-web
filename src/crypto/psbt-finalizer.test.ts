@@ -202,6 +202,41 @@ describe('analyzePsbt', () => {
     expect(analysis.outputs[0]!.isChange).toBe(false)
   })
 
+  /**
+   * The screens render this field directly. It used to be filled with the
+   * literal string 'Unknown' whenever fromOutputScript threw, and both review
+   * screens then drew that word as the destination with a copy control beside
+   * it, so a customer could copy the seven characters "Unknown", paste them
+   * into a block explorer and get nothing, with no way to tell a broken tool
+   * from a bad address. Null is the same idiom inputValues already uses for a
+   * value the PSBT does not carry.
+   */
+  it('reports a null address for an output whose script decodes to none', () => {
+    // An OP_RETURN. The guard proves this really is undecodable, so the null
+    // below is about a genuine decode failure and not a script that would have
+    // produced null for some other reason.
+    const opReturn = bitcoin.script.compile([
+      bitcoin.opcodes.OP_RETURN,
+      Buffer.from('6b65792d7265636f76657279', 'hex'),
+    ])
+    expect(() => bitcoin.address.fromOutputScript(opReturn, NET)).toThrow()
+
+    const psbt = buildUnsignedPsbt()
+    psbt.addOutput({ script: opReturn, value: BigInt(0) })
+    const analysis = analyzePsbt(psbt, 'testnet')
+
+    // Positive partner: both outputs are present and the decodable one still
+    // reports its address, so this cannot pass by the output being dropped.
+    expect(analysis.outputs).toHaveLength(2)
+    expect(analysis.outputCount).toBe(2)
+    expect(analysis.outputs[0]!.address).toBe(DESTINATION)
+
+    expect(analysis.outputs[1]!.address).toBeNull()
+    // And specifically not the placeholder the screens used to render.
+    expect(analysis.outputs[1]!.address).not.toBe('Unknown')
+    expect(analysis.outputs[1]!.isChange).toBe(false)
+  })
+
   it('marks no outputs as change when escrowAddress is not provided', () => {
     const psbt = buildUnsignedPsbt()
     const analysis = analyzePsbt(psbt, 'testnet')
@@ -224,6 +259,58 @@ describe('analyzePsbt', () => {
     expect(analysis.inputCount).toBe(3)
     expect(analysis.signatureCount).toHaveLength(3)
     expect(analysis.signatureCount.every((c) => c === 0)).toBe(true)
+  })
+
+  /**
+   * The review screen used to divide totalInputValue by inputCount and print
+   * that on every input row. Deliberately UNEQUAL values here: with three
+   * equal inputs an average and a per-input value are the same number, and the
+   * bug would survive the test.
+   */
+  it('returns each input value separately, in input order', () => {
+    const values = [BigInt(100_001), BigInt(50_000), BigInt(250_000)]
+    const psbt = new bitcoin.Psbt({ network: NET })
+    values.forEach((value, i) => {
+      psbt.addInput({
+        hash: makeFakeTxid(String(i + 1)),
+        index: 0,
+        witnessUtxo: { script: SCRIPT_OUTPUT, value },
+        witnessScript: WITNESS_SCRIPT,
+      } as any)
+    })
+    psbt.addOutput({ address: DESTINATION, value: BigInt(390_000) })
+
+    const analysis = analyzePsbt(psbt, 'testnet')
+    expect(analysis.inputValues).toEqual([100_001, 50_000, 250_000])
+    // The total is still the sum, unchanged by this addition.
+    expect(analysis.totalInputValue).toBe(400_001)
+    // And no entry is the average, which is what the screen used to show.
+    const average = analysis.totalInputValue / analysis.inputCount
+    expect(analysis.inputValues).not.toContain(average)
+  })
+
+  it('reports null for an input whose value the PSBT does not carry', () => {
+    const psbt = new bitcoin.Psbt({ network: NET })
+    psbt.addInput({
+      hash: makeFakeTxid('1'),
+      index: 0,
+      witnessUtxo: { script: SCRIPT_OUTPUT, value: BigInt(100_001) },
+      witnessScript: WITNESS_SCRIPT,
+    } as any)
+    // No witnessUtxo on this one, so its value is genuinely absent.
+    psbt.addInput({ hash: makeFakeTxid('2'), index: 0 } as any)
+    psbt.addOutput({ address: DESTINATION, value: BigInt(90_000) })
+
+    const analysis = analyzePsbt(psbt, 'testnet')
+    // Positive partner: the input that does carry a value still reports it, so
+    // this cannot pass on an empty array.
+    expect(analysis.inputValues).toHaveLength(2)
+    expect(analysis.inputValues[0]).toBe(100_001)
+    // Null, not 0. A zero would read as an input worth nothing.
+    expect(analysis.inputValues[1]).toBeNull()
+    expect(analysis.inputValues[1]).not.toBe(0)
+    // The unknown input contributes nothing to the total, exactly as before.
+    expect(analysis.totalInputValue).toBe(100_001)
   })
 })
 

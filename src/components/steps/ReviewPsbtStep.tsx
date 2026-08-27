@@ -1,5 +1,6 @@
 import { ArrowLeft, PenLine, AlertTriangle } from 'lucide-react'
-import { formatBtc, formatSats, truncateHash } from '@/lib/btcFormat'
+import { CopyButton } from '@/components/CopyButton'
+import { formatBtc, formatSats } from '@/lib/btcFormat'
 import type { PsbtAnalysis } from '@/crypto/psbt-finalizer'
 
 type ReviewPsbtStepProps = {
@@ -50,19 +51,30 @@ export function ReviewPsbtStep({ analysis, onSign, onBack }: ReviewPsbtStepProps
           Inputs ({analysis.inputCount})
         </p>
         <div className="divide-y divide-border rounded-[var(--radius-base)] border border-border">
-          {Array.from({ length: analysis.inputCount }, (_, i) => (
-            <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-xs text-muted-foreground">Input {i + 1}</span>
-              <div className="text-right">
-                <span className="text-xs font-medium text-foreground">
-                  {formatSats(analysis.totalInputValue / analysis.inputCount)} sats
-                </span>
-                <span className="ml-2 text-xs text-muted-foreground">
-                  ({analysis.signatureCount[i] ?? 0} sig{(analysis.signatureCount[i] ?? 0) !== 1 ? 's' : ''})
-                </span>
+          {Array.from({ length: analysis.inputCount }, (_, i) => {
+            // This row used to divide the total by the number of inputs, so
+            // every row showed the same average. With two unequal inputs that
+            // is a figure neither input has, and it can carry a fraction of a
+            // satoshi. Each row now reads its own value.
+            const value = analysis.inputValues[i]
+            return (
+              <div key={i} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-xs text-muted-foreground">Input {i + 1}</span>
+                <div className="text-right">
+                  {value === null || value === undefined ? (
+                    <span className="text-xs font-medium text-muted-foreground">Unknown</span>
+                  ) : (
+                    <span className="text-xs font-medium text-foreground">
+                      {formatSats(value)} sats
+                    </span>
+                  )}
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    ({analysis.signatureCount[i] ?? 0} sig{(analysis.signatureCount[i] ?? 0) !== 1 ? 's' : ''})
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -73,16 +85,41 @@ export function ReviewPsbtStep({ analysis, onSign, onBack }: ReviewPsbtStepProps
         </p>
         <div className="divide-y divide-border rounded-[var(--radius-base)] border border-border">
           {analysis.outputs.map((output, i) => (
-            <div key={i} className="flex items-start justify-between gap-3 px-4 py-3">
+            <div
+              key={i}
+              className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+            >
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <p className="font-mono text-xs text-foreground">
-                    {truncateHash(output.address, 10)}
-                  </p>
-                  {output.isChange && (
-                    <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      change
+                <div className="flex flex-wrap items-start gap-1.5">
+                  {output.address === null ? (
+                    /* The script decodes to no address, so there is nothing to
+                       show and nothing to copy. Offering a copy control here
+                       handed the customer a placeholder word that a block
+                       explorer finds nothing for, leaving them unable to tell
+                       a broken tool from a bad address. */
+                    <span className="min-w-0 flex-1 text-xs font-medium text-muted-foreground">
+                      Unknown
                     </span>
+                  ) : (
+                    <>
+                      {/* The full address, never truncated. This screen tells
+                          the customer to confirm the destination, and a
+                          shortened address cannot rule out a substitution that
+                          matches on the first and last characters. */}
+                      <code className="min-w-0 flex-1 break-all font-mono text-xs text-foreground">
+                        {output.address}
+                      </code>
+                      {output.isChange && (
+                        <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          change
+                        </span>
+                      )}
+                      <CopyButton
+                        text={output.address}
+                        variant="icon"
+                        ariaLabel={`Copy ${output.isChange ? 'change' : 'destination'} address, output ${i + 1} of ${analysis.outputs.length}`}
+                      />
+                    </>
                   )}
                 </div>
               </div>

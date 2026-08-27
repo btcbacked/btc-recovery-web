@@ -66,9 +66,9 @@ export function EscrowSummary({
         <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Escrow Address
         </p>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <code className="flex-1 break-all font-mono text-xs text-foreground">{address}</code>
-          <CopyButton text={address} label="Copy" className="shrink-0 px-3 py-1.5 text-xs" />
+          <CopyButton text={address} variant="icon" ariaLabel="Copy escrow address" />
         </div>
       </div>
 
