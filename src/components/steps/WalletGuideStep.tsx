@@ -115,6 +115,11 @@ export function WalletGuideStep({
    * hunting for a control has to be told the word they will actually see.
    */
   const fileName = isPasswordPath ? 'signing file' : 'escrow file'
+  /* `fileName` starts with a vowel on one branch and a consonant on the other,
+   * so any sentence that puts an indefinite article in front of it has to pick
+   * the article from the same condition. Hard coding "a" rendered "a escrow
+   * file" for every hardware customer. */
+  const fileNameArticle = isPasswordPath ? 'a' : 'an'
   const fileNameTitle = isPasswordPath ? 'Signing File' : 'Escrow File'
 
   /*
@@ -269,7 +274,8 @@ export function WalletGuideStep({
                 <>
                   Check it worked. The balance must match the balance shown above. Then open the{' '}
                   <strong>Addresses</strong> tab and confirm the first receive address is the
-                  escrow address shown above. Sparrow can accept a {fileName} and quietly
+                  escrow address shown above. Sparrow can accept {fileNameArticle} {fileName} and
+                  quietly
                   build a different wallet, and it will not warn you. {mismatchAdvice}
                 </>
               )}
