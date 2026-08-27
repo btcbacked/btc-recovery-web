@@ -435,6 +435,11 @@ describe('ActionChoiceStep names the signing file', () => {
         network="testnet"
         customEndpoint=""
         needsCustomEndpoint={false}
+        balance={0}
+        isLoadingBalance={false}
+        balanceError={null}
+        balanceChecked={false}
+        onLoadBalance={() => {}}
         onCustomEndpointChange={() => {}}
         onCreateTransaction={() => {}}
         onSignExisting={() => {}}
