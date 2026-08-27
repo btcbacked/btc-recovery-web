@@ -564,6 +564,14 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     const card = screen.getByRole('tablist').parentElement
     expect(card?.textContent).not.toMatch(/contact BTCBacked support/i)
     expect(card?.textContent).not.toMatch(/move your Bitcoin from this page/i)
+
+    // POSITIVE PARTNER. Both negatives above were already true on this branch
+    // before any of this copy was written, so on their own they are a pair of
+    // permanent no ops: an empty card, a card that failed to render, and a card
+    // that says the right thing all pass them identically. This asserts the
+    // ending that IS true here, so the silence above is provably deliberate
+    // silence in a populated card rather than nothing at all.
+    expect(card?.textContent).toMatch(/read both from Sparrow itself/i)
   })
 
   it('does not promise an address and a balance it has not got', async () => {
