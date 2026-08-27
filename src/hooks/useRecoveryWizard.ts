@@ -127,8 +127,12 @@ export function useRecoveryWizard() {
       case 'result': return 5
       case 'action-choice': return 6
 
-      // Guide path (legacy hardware wallet flow)
-      case 'guide': return 6
+      // Guide path (legacy hardware wallet flow). Seven, not six: this path's
+      // labels are the six shared ones plus 'Export', and Export is the screen
+      // being shown. Six highlighted 'Choose', the step already behind them,
+      // and left 'Export' rendered as a future step nobody had reached, in the
+      // chip and in its aria-label both.
+      case 'guide': return 7
 
       // Path A: create transaction
       case 'wallet-view': return 7

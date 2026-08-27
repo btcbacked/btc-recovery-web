@@ -24,12 +24,19 @@ export function isPasswordKeySource(keySource: string): boolean {
   return keySource === PASSWORD_KEY_SOURCE
 }
 
+/**
+ * What we say when the file records a device but not which one. Every escrow
+ * created now records exactly that, so this is the common case and not the
+ * fallback it looks like.
+ */
+const GENERIC_HARDWARE_LABEL = 'Hardware wallet'
+
 const KEY_SOURCE_LABELS: Record<string, string> = {
   PASSWORD: 'Password',
   COLD_CARD: 'Coldcard hardware wallet',
   LEDGER: 'Ledger hardware wallet',
   TREZOR: 'Trezor hardware wallet',
-  OTHER: 'Hardware wallet',
+  OTHER: GENERIC_HARDWARE_LABEL,
 }
 
 /**
@@ -38,7 +45,22 @@ const KEY_SOURCE_LABELS: Record<string, string> = {
  * showing a raw code the user cannot act on.
  */
 export function describeKeySource(keySource: string): string {
-  return KEY_SOURCE_LABELS[keySource] ?? 'Hardware wallet'
+  return KEY_SOURCE_LABELS[keySource] ?? GENERIC_HARDWARE_LABEL
+}
+
+/**
+ * The device's name, for a screen whose heading already says the key is on a
+ * hardware wallet. Null when the file does not name a device, because the only
+ * thing left to print there is the heading over again.
+ *
+ * This reads the same `keySource` the file has always carried and infers
+ * nothing further from it. A file that records no device still records no
+ * device; it simply stops saying so twice.
+ */
+export function describeKeySourceDevice(keySource: string): string | null {
+  if (isPasswordKeySource(keySource)) return null
+  const label = describeKeySource(keySource)
+  return label === GENERIC_HARDWARE_LABEL ? null : label
 }
 
 export type RecoveryFileContext = {

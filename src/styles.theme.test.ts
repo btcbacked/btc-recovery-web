@@ -531,3 +531,103 @@ describe('the bright tokens stay fills, which is why the -text pairs exist', () 
     }
   )
 })
+
+/* ---------- the numbered step list ---------- */
+
+/**
+ * THIS GUARDS THE RULE, NOT THE RENDER. Say so plainly, because the distinction
+ * is the whole reason the defect below shipped and stayed shipped.
+ *
+ * jsdom has no layout engine. It will happily report `display: flex` on an <li>
+ * and has no opinion at all about where the boxes land, so no assertion in this
+ * repo can see a sentence broken into columns. A true layout guard would need a
+ * real browser and a bounding box check. What is available here is the
+ * stylesheet as text, and the defect was entirely expressible in it.
+ *
+ * THE DEFECT: `.step-list-item { display: flex }`. An <li> set to flex makes
+ * every child its own flex ITEM, so each <strong> became a box and each run of
+ * text between them became an anonymous box. Every numbered step in all three
+ * wallet guide tabs, wherever it named a control in bold, was laid out as
+ * ragged side by side columns instead of a sentence, and the Bitcoin Core
+ * <code> command blocks sat beside their prose rather than beneath it.
+ *
+ * Measured: the ENTIRE `.step-list-item` rule can be deleted and the full suite
+ * still passes. Nothing else in 28 files touches it.
+ */
+describe('the numbered step list flows as a sentence, not as columns', () => {
+  /**
+   * The declarations inside one rule of styles.css, with comments stripped.
+   *
+   * Stripping matters: these rules are heavily commented, and the comments name
+   * the very properties being asserted absent. A prose mention of `margin-top`
+   * explaining why there is no margin-top would otherwise fail the test.
+   */
+  function ruleBody(selector: string): string {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+    const rule = stylesSource.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'))
+    if (!rule?.[1]) throw new Error(`styles.css has no rule ${selector}`)
+    return rule[1].replace(/\/\*[\s\S]*?\*\//g, '')
+  }
+
+  it('finds the rules it is meant to be guarding', () => {
+    // Both negatives below are satisfied by a rule that does not exist, so the
+    // rules have to be proven present by something they positively declare.
+    expect(ruleBody('.step-list-item')).toMatch(/counter-increment:\s*step-counter/)
+    expect(ruleBody('.step-list-item::before')).toMatch(/content:\s*counter\(step-counter\)/)
+  })
+
+  it('the list item is not a flex container', () => {
+    const body = ruleBody('.step-list-item')
+
+    // The negative, and its positive partner: the item is not flex BECAUSE it
+    // is a positioned block reserving room for the number on its left. Without
+    // the positive half, deleting the whole rule satisfies this test.
+    expect(body).not.toMatch(/display:\s*flex/)
+    expect(body).toMatch(/position:\s*relative/)
+    expect(body).toMatch(/padding:[^;]*\b30px\b/)
+  })
+
+  it('the negative assertion above is still capable of failing', () => {
+    // The live control. `not.toMatch` passes against an empty string, a renamed
+    // class or a moved rule, so the pattern itself is exercised against text
+    // that must match. This repo has 152 negative string assertions and 15 of
+    // them already match nothing at all.
+    expect('  display: flex;').toMatch(/display:\s*flex/)
+  })
+
+  it('the number is lifted out of the text flow', () => {
+    const before = ruleBody('.step-list-item::before')
+
+    expect(before).toMatch(/position:\s*absolute/)
+    expect(before).toMatch(/left:\s*0/)
+
+    // `margin-top` was a nudge against `align-items: baseline`. Against an
+    // absolute `top` it double counts, and the number sits low.
+    expect(before).not.toMatch(/margin-top/)
+
+    // `flex-shrink` only means anything to a flex child, which this no longer
+    // is. Left in place it reads as load bearing and is a no-op.
+    expect(before).not.toMatch(/flex-shrink/)
+  })
+
+  it('one top value can serve both lists, because the line height is pinned', () => {
+    // `WalletGuideStep` items carry text-sm (a 20px line box); the
+    // `ExportPsbtStep` list inherits text-xs (16px). An absolutely positioned
+    // circle cannot align in both unless the first line box is the same height
+    // in both, so the item pins it to the circle's own 20px.
+    const item = ruleBody('.step-list-item')
+    const before = ruleBody('.step-list-item::before')
+
+    const lineHeight = item.match(/line-height:\s*(\d+)px/)?.[1]
+    const circleHeight = before.match(/height:\s*(\d+)px/)?.[1]
+    expect(lineHeight).toBeDefined()
+    expect(circleHeight).toBe(lineHeight)
+
+    // And the circle starts level with the first line, so `top` has to equal
+    // the padding the item puts above that line.
+    const paddingTop = item.match(/padding:\s*(\d+)px/)?.[1]
+    const top = before.match(/top:\s*(\d+)px/)?.[1]
+    expect(top).toBeDefined()
+    expect(top).toBe(paddingTop)
+  })
+})

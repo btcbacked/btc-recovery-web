@@ -22,7 +22,7 @@ import { BroadcastStep } from '@/components/steps/BroadcastStep'
 import { useRecoveryWizard } from '@/hooks/useRecoveryWizard'
 import type { WizardStep } from '@/hooks/useRecoveryWizard'
 import { useDerivation } from '@/hooks/useDerivation'
-import { useWalletState } from '@/hooks/useWalletState'
+import { useWalletState, balanceCheckKey } from '@/hooks/useWalletState'
 import { usePsbtWorkflow } from '@/hooks/usePsbtWorkflow'
 import { useNetworkConfig } from '@/hooks/useNetworkConfig'
 import { AlertTriangle } from 'lucide-react'
@@ -44,12 +44,19 @@ const STEP_LABELS_PATH_A = [
   'Wallet', 'Build', 'Review', 'Export',
 ]
 
+// 'Import' here is Path B, and it is the real thing: a file the OTHER signer
+// produced, being pulled in. Do not sweep it up with the guide label below.
 const STEP_LABELS_PATH_B = [
   ...STEP_LABELS_SHARED,
   'Import', 'Review', 'Sign', 'Broadcast',
 ]
 
-const STEP_LABELS_GUIDE = [...STEP_LABELS_SHARED, 'Import']
+// The guide screen is the customer taking their own signing file OUT to their
+// own wallet, so it is an export. This chip is rendered on the destination
+// screen itself, and `StepIndicator` also puts it in the aria-label, so leaving
+// it as 'Import' meant clicking "Export Your Signing File Instead" and landing
+// on a screen whose progress chip and screen reader both said Import.
+const STEP_LABELS_GUIDE = [...STEP_LABELS_SHARED, 'Export']
 
 /**
  * The only steps that must NOT carry the derivation notice at wizard level,
@@ -183,10 +190,18 @@ export function RecoveryWizard() {
 
   const handleFileLoaded = useCallback(
     (file: RecoveryFile) => {
+      // Everything the wallet hook holds was fetched for the PREVIOUS file, and
+      // `setRecoveryFile` cannot reach it: it clears the wizard's own derived
+      // state and nothing else. Left standing, a second file inherits the first
+      // one's balance, UTXOs and error, so a customer opening a second loan
+      // sees the first loan's money under the second loan's address. It also
+      // advances the wallet hook's sequence, which abandons any fetch still in
+      // flight for the file being replaced.
+      walletReset()
       setRecoveryFile(file)
       setStep('info')
     },
-    [setRecoveryFile, setStep],
+    [walletReset, setRecoveryFile, setStep],
   )
 
   const handleInfoConfirm = useCallback(() => {
@@ -654,6 +669,26 @@ export function RecoveryWizard() {
                 network={network}
                 customEndpoint={networkConfig.customEndpoint}
                 needsCustomEndpoint={networkConfig.needsCustomEndpoint}
+                balance={walletState.balance}
+                isLoadingBalance={walletState.isLoading}
+                balanceError={walletState.error}
+                /* Compared against the endpoint AND the escrow address IN
+                   USE, not a bare "have we loaded" flag. At mount nothing has
+                   been fetched, so the Choose screen says Unknown rather than
+                   reporting the initial 0 as an empty escrow. On regtest it
+                   goes back to Unknown the moment the customer edits the
+                   endpoint, because the balance we are holding was fetched from
+                   the previous one. The address is in the key because every
+                   loan on a network shares one endpoint, so an endpoint-only
+                   comparison reported "checked" for an escrow nobody had asked
+                   about and showed the previous loan's balance against it. */
+                balanceChecked={
+                  walletState.balanceCheckedFor ===
+                  balanceCheckKey(networkConfig.apiBaseUrl, escrowAddress)
+                }
+                /* Same loader every other screen uses, so the address it checks
+                   the derivation against cannot be forgotten here either. */
+                onLoadBalance={handleLoadWallet}
                 onCustomEndpointChange={networkConfig.setCustomEndpoint}
                 onCreateTransaction={handleActionChoice_CreateTx}
                 onSignExisting={handleActionChoice_SignExisting}

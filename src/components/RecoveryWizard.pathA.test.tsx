@@ -214,7 +214,7 @@ async function recoverKey(json: string) {
     target: { value: PASSWORD },
   })
   fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-  fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
 }
 
 /** The whole of Path A, driven through the UI, up to the sign button. */

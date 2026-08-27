@@ -195,11 +195,43 @@ describe('hardware path — escrow address and balance', () => {
     confirmInfo()
     await screen.findByText(EXPECTED_ADDRESS)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
 
     expect(await screen.findByText(EXPECTED_ADDRESS)).toBeTruthy()
     expect(await screen.findByText('Total Balance')).toBeTruthy()
     expect(await screen.findByText(/0\.00225000/)).toBeTruthy()
+  })
+
+  it('calls that destination an export on the button and on the chip alike', async () => {
+    /*
+     * Elie ruled the word EXPORT for what the customer does with their own
+     * wallet. Three things point at this one screen and they have to agree, or
+     * the tool contradicts itself between one click and the next:
+     *
+     *  - the password customer's link, "Export Your Signing File Instead"
+     *  - the hardware customer's button, here
+     *  - the progress chip ON the destination, which `StepIndicator` renders
+     *    visibly and also puts in the aria-label of the step circle
+     *
+     * The chip was the one that was missed: clicking a button that said Export
+     * landed on a screen whose chip, and whose screen reader announcement, both
+     * said Import.
+     */
+    loadFile(recoveryJson())
+    confirmInfo()
+    await screen.findByText(EXPECTED_ADDRESS)
+
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
+    await screen.findByRole('tablist')
+
+    const chip = screen.getByLabelText(/^Step 7: /i)
+    expect(chip.getAttribute('aria-label')).toMatch(/^Step 7: Export/)
+    expect(chip.getAttribute('aria-label')).not.toMatch(/Import/)
+
+    // The positive control for that negative: 'Import' is still a real label in
+    // this wizard, on Path B, where a file really is being pulled in from the
+    // other signer. A sweep that renamed every chip would be wrong.
+    expect(screen.getByLabelText(/^Step 1: Upload/i)).toBeTruthy()
   })
 
   it('hands the user a descriptor carrying a checksum', async () => {
@@ -270,7 +302,7 @@ describe('an escrow other wallet software will disagree with', () => {
     confirmInfo()
     await screen.findByText(NOTICE)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     const card = screen.getByRole('tablist').parentElement
@@ -284,7 +316,7 @@ describe('an escrow other wallet software will disagree with', () => {
     confirmInfo()
     await screen.findByText(EXPECTED_ADDRESS)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     const card = screen.getByRole('tablist').parentElement
@@ -361,7 +393,7 @@ describe('the pinned-escrow notice past the screens that carry their own', () =>
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    await screen.findByRole('button', { name: /Next: Import into Wallet/i })
+    await screen.findByRole('button', { name: /^Continue$/i })
   }
 
   it('derives an address the ranged reading would have missed', () => {
@@ -383,7 +415,7 @@ describe('the pinned-escrow notice past the screens that carry their own', () =>
 
   it('warns on the screen where the customer picks what to do next', async () => {
     await reachResult()
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
 
     // action-choice. No escrow summary renders here, so the wizard card is the
     // only thing that can carry it.
@@ -393,14 +425,14 @@ describe('the pinned-escrow notice past the screens that carry their own', () =>
 
   it('says it once there, not twice', async () => {
     await reachResult()
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
 
     expect(screen.getAllByText(NOTICE)).toHaveLength(1)
   })
 
   it('is vouching for the address that screen shows', async () => {
     await reachResult()
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
 
     // The notice claims this page has the right address. That claim is only
     // worth anything if the address on the same screen is the pinned one.
@@ -420,7 +452,7 @@ describe('the pinned-escrow notice past the screens that carry their own', () =>
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
 
     expect(screen.getByRole('button', { name: /Sign Existing PSBT/i })).toBeTruthy()
     expect(screen.queryByText(NOTICE)).toBeNull()
@@ -465,7 +497,7 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     confirmInfo()
     await screen.findByText(REFUSAL)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     expect(screen.getByText(REFUSAL)).toBeTruthy()
@@ -484,7 +516,7 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     loadFile(recoveryJson({ outputDescriptor: UNSUPPORTED }))
     confirmInfo()
     await screen.findByText(REFUSAL)
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
   }
 
@@ -526,13 +558,28 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     }
   })
 
+  it('does not promise this branch a single address either', async () => {
+    // Both branches share one `deriveaddresses` command, so the index 0
+    // assumption sat in the refusal copy too: "This prints the address:" over
+    // `deriveaddresses "PASTE_HERE" [0,0]`. There is nothing here to compare
+    // against, which is exactly why a customer reading out one address and
+    // taking it for their escrow is the same wrong fact reached from the other
+    // side.
+    await openGuideOnRefusal()
+    const text = panelFor('Bitcoin Core').textContent ?? ''
+
+    expect(text).toContain('deriveaddresses "PASTE_HERE" [0,100]')
+    expect(text).toMatch(/prints addresses 0 to 100/i)
+    expect(text).not.toMatch(/prints the address:/i)
+  })
+
   it('still tells an ordinary escrow to compare, on every tab', async () => {
     // And the third half, which is the one that matters most: the comparison
     // is the whole point of this screen for every customer whose file is fine.
     loadFile(recoveryJson())
     confirmInfo()
     await screen.findByText(EXPECTED_ADDRESS)
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
@@ -555,7 +602,7 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     confirmInfo()
     await screen.findByText(REFUSAL)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     // Three endings are possible here and only silence is true. Support is
@@ -579,7 +626,7 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     confirmInfo()
     await screen.findByText(REFUSAL)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     expect(screen.queryByText(/Below is the address and balance your wallet must show/i)).toBeNull()
@@ -629,7 +676,7 @@ describe('a recovery file whose descriptor will not parse', () => {
     confirmInfo()
     await screen.findByText(REFUSAL)
 
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     expect(screen.getByText(REFUSAL)).toBeTruthy()
@@ -644,7 +691,7 @@ describe('a recovery file whose descriptor will not parse', () => {
     // Same mount throughout, which is the point: the flag is wizard state, so
     // it has to be cleared when the file it describes is replaced. A fresh
     // render would pass whether it is cleared or not.
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
     fireEvent.click(screen.getByRole('button', { name: /Start Over/i }))
     expect(screen.queryByText(REFUSAL)).toBeNull()
@@ -720,7 +767,7 @@ describe('derivation path recorded against the descriptor', () => {
     // import instructions are still reachable.
     await screen.findByText(WARNING)
     expect(
-      screen.getByRole('button', { name: /View Import Instructions/i }),
+      screen.getByRole('button', { name: /View Export Instructions/i }),
     ).toBeTruthy()
   })
 
@@ -918,7 +965,7 @@ describe('import instructions', () => {
     loadFile(recoveryJson())
     confirmInfo()
     await screen.findByText(EXPECTED_ADDRESS)
-    fireEvent.click(screen.getByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
   }
 
@@ -926,7 +973,17 @@ describe('import instructions', () => {
     await openGuide()
     const panel = document.getElementById('wallet-panel-sparrow')
     expect(panel?.textContent).toMatch(/balance must match the balance shown above/i)
-    expect(panel?.textContent).toMatch(/first receive address is the escrow address/i)
+    // Was: toMatch(/first receive address is the escrow address/i). That pinned
+    // a claim which is false for every loan after the customer's first. The
+    // descriptor handed out is ranged on all three legs, so a wallet lists
+    // addresses from index 0 upward, but each loan sits at its own child index
+    // under one shared account: a second loan is at index 1, a third at index
+    // 2. The position claim is gone and the address is now looked for anywhere
+    // in the tab.
+    expect(panel?.textContent).toMatch(
+      /escrow address shown above must appear in the Addresses tab/i,
+    )
+    expect(panel?.textContent).not.toMatch(/first receive address/i)
   })
 
   it('names Nunchuk for phone users without promising it will work', async () => {
@@ -936,10 +993,21 @@ describe('import instructions', () => {
     expect(panel?.textContent).toMatch(/expects a different file format/i)
   })
 
-  it('warns that Sparrow can build a different wallet without saying so', async () => {
+  it('no longer explains a mismatch as Sparrow having built a different wallet', async () => {
+    // Was: it('warns that Sparrow can build a different wallet without saying
+    // so') asserting toMatch(/quietly build a different wallet/i). The CEO cut
+    // that sentence along with the position claim it backed up, and the two
+    // belonged together: the addresses legitimately differ at index 0 for every
+    // loan after the customer's first, so a sentence blaming the difference on
+    // Sparrow turned a false alarm into a confirmed one.
     await openGuide()
     const panel = document.getElementById('wallet-panel-sparrow')
-    expect(panel?.textContent).toMatch(/quietly build a different wallet/i)
+    expect(panel?.textContent).not.toMatch(/quietly build a different wallet/i)
+    // POSITIVE PARTNER. The negative alone passes on an empty panel, on a panel
+    // that failed to render, and on a check step deleted outright.
+    expect(panel?.textContent).toMatch(
+      /escrow address shown above must appear in the Addresses tab/i,
+    )
   })
 
   it('says Sparrow needs a computer', async () => {
@@ -985,8 +1053,38 @@ describe('import instructions', () => {
     await openGuide()
     fireEvent.click(screen.getByRole('tab', { name: 'Bitcoin Core' }))
     const panel = document.getElementById('wallet-panel-bitcoin-core')
-    expect(panel?.textContent).toContain('deriveaddresses')
+    // Was: toContain('deriveaddresses') and nothing at all about its range, so
+    // `deriveaddresses "PASTE_HERE" [0,0]` satisfied it. That command derives
+    // index 0 only, under a line reading "This must print the same address as
+    // the one shown above", and each loan sits at its own child index: a second
+    // loan is at index 1. Every customer past their first loan was therefore
+    // shown a mismatch, three words before copy telling them to stop and move
+    // no Bitcoin. The range is the point of this test now, so it is pinned.
+    expect(panel?.textContent).toContain('deriveaddresses "PASTE_HERE" [0,100]')
+    expect(panel?.textContent).not.toContain('[0,0]')
+    expect(panel?.textContent).toMatch(/prints addresses 0 to 100/i)
+    expect(panel?.textContent).toMatch(/escrow address shown above must appear among them/i)
+    expect(panel?.textContent).not.toMatch(/must print the same address/i)
     expect(panel?.textContent).toContain('getbalance')
+  })
+
+  it('prints exactly the range it scanned, so the two cannot drift apart', async () => {
+    // Two commands, one fact. The import decides how far the node scans and the
+    // derive decides what the customer is shown to compare against, so an
+    // import wider than the print recreates this bug for anyone whose loan sits
+    // past the printed window. Read off the screen rather than pinned to a
+    // literal, so widening the scan later cannot leave the print behind.
+    await openGuide()
+    fireEvent.click(screen.getByRole('tab', { name: 'Bitcoin Core' }))
+    const text = document.getElementById('wallet-panel-bitcoin-core')?.textContent ?? ''
+
+    const scanned = text.match(/"range":\[0,(\d+)\]/)?.[1]
+    const printed = text.match(/deriveaddresses "PASTE_HERE" \[0,(\d+)\]/)?.[1]
+    expect(scanned).toBeDefined()
+    expect(printed).toBe(scanned)
+    // And the copy states that same number, so what the customer is told to
+    // expect cannot drift from what the command actually prints either.
+    expect(text).toContain(`addresses 0 to ${scanned}`)
   })
 
   it('warns a hardware user to sign on the device, not in the wallet app', async () => {
@@ -1162,7 +1260,7 @@ describe('signing for an escrow this tool refuses to derive', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
 
-    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
     fireEvent.click(screen.getByRole('button', { name: /Sign Existing PSBT/i }))
     fireEvent.change(screen.getByPlaceholderText(/cHNidP8BAH/), {
       target: { value: signablePsbtBase64 },
@@ -1207,15 +1305,20 @@ describe('signing for an escrow this tool refuses to derive', () => {
     expect(screen.getByRole('alert').textContent).toMatch(REFUSAL)
   })
 
-  /** The walk to `wallet-view`, which is Path A's first screen. */
-  async function reachWalletView(json: string = unsupportedJson) {
+  /** The walk to `action-choice`, the Choose screen, which now shows a balance. */
+  async function reachChooseScreen(json: string = unsupportedJson) {
     loadFile(json)
     confirmInfo()
     fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
+  }
+
+  /** The walk on to `wallet-view`, which is Path A's first screen. */
+  async function reachWalletView(json: string = unsupportedJson) {
+    await reachChooseScreen(json)
     fireEvent.click(screen.getByRole('button', { name: /^Create Transaction$/i }))
   }
 
@@ -1225,7 +1328,18 @@ describe('signing for an escrow this tool refuses to derive', () => {
     // a red "Failed to Load Wallet" box sitting directly under the calm alert.
     // Its Retry repeats a derivation that is exact and refuses every time, so
     // the one action offered to a frightened customer could never work.
-    await reachWalletView()
+    //
+    // Checked on the Choose screen FIRST, and that half is not decoration. This
+    // block was written when only `wallet-view` fetched a balance. The Choose
+    // screen now does too, and reinstating the original defect at that new
+    // location left all three of these tests green, because none of them had
+    // ever looked at the screen the customer sees on the way.
+    await reachChooseScreen()
+
+    expect(screen.queryByText(/Failed to Load Wallet/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Retry/i })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Create Transaction$/i }))
 
     expect(screen.queryByText(/Failed to Load Wallet/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /Retry/i })).toBeNull()
@@ -1235,7 +1349,17 @@ describe('signing for an escrow this tool refuses to derive', () => {
     // The worst line on the page, and the reason this is not cosmetic: below
     // the failure box the screen said "No spendable balance. Send Bitcoin to
     // your escrow address first." to a customer holding no address.
-    await reachWalletView()
+    //
+    // The Choose screen now carries its own zero-balance line, so it can tell
+    // the same lie one screen earlier. It must not: with no address there is
+    // no balance to report, empty or otherwise.
+    await reachChooseScreen()
+
+    expect(screen.queryByText(/Send Bitcoin to your escrow address/i)).toBeNull()
+    expect(screen.queryByText(/No spendable balance/i)).toBeNull()
+    expect(screen.queryByText(/Escrow Balance/i)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Create Transaction$/i }))
 
     expect(screen.queryByText(/Send Bitcoin to your escrow address/i)).toBeNull()
     expect(screen.queryByText(/No spendable balance/i)).toBeNull()
@@ -1286,7 +1410,14 @@ describe('signing for an escrow this tool refuses to derive', () => {
     // The unreadable descriptor now reaches the same branch as the other
     // refusal, so it must reach the same treatment: no red failure box, no
     // Retry that cannot work, and no instruction to fund an unshown address.
-    await reachWalletView(unreadableJson)
+    // On the Choose screen on the way there as well as on `wallet-view`.
+    await reachChooseScreen(unreadableJson)
+
+    expect(screen.queryByText(/Failed to Load Wallet/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Retry/i })).toBeNull()
+    expect(screen.queryByText(/Escrow Balance/i)).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Create Transaction$/i }))
 
     expect(screen.queryByText(/Failed to Load Wallet/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /Retry/i })).toBeNull()
@@ -1343,14 +1474,14 @@ describe('signing for an escrow this tool refuses to derive', () => {
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    await screen.findByRole('button', { name: /Next: Import into Wallet/i })
+    await screen.findByRole('button', { name: /^Continue$/i })
 
     // The result screen.
     expect(document.body.textContent).toContain(userXprv)
     expect(screen.getAllByText(/Keep this secret/i).length).toBeGreaterThan(0)
 
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Import into External Wallet Instead/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Export Your Signing File Instead/i }))
     await screen.findByRole('tablist')
 
     // The guide screen, which is where it was missing.
@@ -1379,8 +1510,8 @@ describe('signing for an escrow this tool refuses to derive', () => {
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Import into External Wallet Instead/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Export Your Signing File Instead/i }))
     await screen.findByRole('tablist')
 
     expect(document.body.textContent).toMatch(/Signing File/)
@@ -1390,7 +1521,7 @@ describe('signing for an escrow this tool refuses to derive', () => {
   it('says escrow file, and never signing file, on the route a device customer walks', async () => {
     loadFile(recoveryJson({ keySource: 'COLD_CARD' }))
     confirmInfo()
-    fireEvent.click(await screen.findByRole('button', { name: /View Import Instructions/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
     expect(document.body.textContent).toMatch(/Escrow File/)
@@ -1410,8 +1541,8 @@ describe('signing for an escrow this tool refuses to derive', () => {
       target: { value: PASSWORD },
     })
     fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-    fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Import into External Wallet Instead/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Export Your Signing File Instead/i }))
     await screen.findByRole('tablist')
 
     for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
@@ -1422,6 +1553,55 @@ describe('signing for an escrow this tool refuses to derive', () => {
       expect(text).not.toMatch(/balance above/i)
       expect(text).toMatch(/no address and no balance for you to compare against/i)
     }
+  })
+
+  it('still shows the balance on the Choose screen for an escrow it can derive', async () => {
+    // The positive partner for the three `queryByText(/Escrow Balance/i)`
+    // absence checks above. Without it they all pass for a Choose screen that
+    // shows nobody a balance, which is the state this change exists to end.
+    await reachChooseScreen(supportedJson)
+
+    expect(await screen.findByText('Escrow Balance')).toBeTruthy()
+    expect(screen.queryByText(REFUSAL)).toBeNull()
+  })
+
+  it('says Unknown on the Choose screen until the fetch has actually come back', async () => {
+    // The wizard half of the guard, and the half no component test can hold.
+    // `ActionChoiceStep` cannot tell "asked, and there is nothing there" from
+    // "nobody has asked yet": at mount `balance` is 0, `isLoadingBalance` is
+    // false and `balanceError` is null, which is exactly an empty escrow. The
+    // wizard is what supplies the difference, so a `balanceChecked` wired to a
+    // constant passes every test in `ActionChoiceStep.test.tsx` while this
+    // screen goes on reporting the initial 0 as an empty escrow.
+    //
+    // Read immediately, with real timers. The fetch is debounced, so at this
+    // point nothing has been asked on ANY network, testnet here included.
+    await reachChooseScreen(supportedJson)
+
+    // Scoped to the row the "Escrow Balance" label sits in. This screen can
+    // carry a second live region, the pinned-escrow notice, and it comes first
+    // in the document. Both queries throw rather than return nothing, so a
+    // screen that stopped rendering the balance at all fails here.
+    //
+    // `closest`, because the live region is the row: it has to announce the
+    // label as well as the value, or a screen reader user hears a bare number
+    // with nothing saying what it is. A region wrapping the value alone is not
+    // reachable from the label and fails here.
+    const line = () => {
+      const label = screen.getByText('Escrow Balance')
+      const status = label.closest('[role="status"]')
+      if (!status) throw new Error('the Choose screen renders no balance live region')
+      return status.textContent ?? ''
+    }
+
+    expect(line()).toMatch(/Unknown/i)
+    expect(line()).not.toMatch(/0\.00000000/)
+    expect(line()).not.toMatch(/No spendable balance/i)
+
+    // The positive partner. Unknown is a stage, not the end state: the same
+    // line carries the real balance once the fetch returns, so a screen stuck
+    // on Unknown forever fails here.
+    await waitFor(() => expect(line()).toMatch(/0\.00225000 BTC/))
   })
 
   it('still shows the balance and the spend button for an escrow it can derive', async () => {
@@ -1457,12 +1637,106 @@ describe('signing for an escrow this tool refuses to derive', () => {
 
     // result
     expect(await screen.findByText(REFUSAL)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /Next: Import into Wallet/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^Continue$/i }))
     // action-choice, which must not offer an empty address to copy either
     expect(screen.getByText(REFUSAL)).toBeTruthy()
     expect(screen.queryByText(/Escrow Address \(/i)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Sign Existing PSBT/i }))
     // import-psbt
     expect(screen.getByText(REFUSAL)).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The step indicator on the export guide
+// ---------------------------------------------------------------------------
+
+/**
+ * The guide path's labels are the six shared ones plus 'Export', so the guide
+ * is step SEVEN. Numbered six, the chip that lit up was 'Choose', the step the
+ * customer had already left, and 'Export' sat there as a future step nobody had
+ * reached. The chips carry that in their aria-label as well as their colour, so
+ * a screen reader user was told the same wrong thing.
+ */
+describe('the step indicator on the export guide', () => {
+  it('marks Export as the step being shown', async () => {
+    loadFile(recoveryJson({ keySource: 'COLD_CARD' }))
+    confirmInfo()
+    fireEvent.click(await screen.findByRole('button', { name: /View Export Instructions/i }))
+
+    expect(screen.getByLabelText('Step 7: Export (current)')).toBeTruthy()
+    expect(screen.queryByLabelText('Step 7: Export')).toBeNull()
+  })
+
+  it('marks Choose as a step already behind them', async () => {
+    loadFile(recoveryJson({ keySource: 'COLD_CARD' }))
+    confirmInfo()
+    fireEvent.click(await screen.findByRole('button', { name: /View Export Instructions/i }))
+
+    expect(screen.getByLabelText('Step 6: Choose (completed)')).toBeTruthy()
+    expect(screen.queryByLabelText('Step 6: Choose (current)')).toBeNull()
+  })
+
+  it('does not drag the rest of the walk along with it', async () => {
+    // The positive partner for the change above. Moving the guide to seven must
+    // not drag the screen that really is step six along with it.
+    // Moving the guide to seven must move only the guide. The screen before
+    // it is still step three, on a walk of six that has no Export chip at all.
+    loadFile(recoveryJson({ keySource: 'COLD_CARD' }))
+    confirmInfo()
+
+    expect(await screen.findByLabelText('Step 3: Authenticate (current)')).toBeTruthy()
+    expect(screen.queryByLabelText(/Export/)).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The device name on the hardware step
+// ---------------------------------------------------------------------------
+
+/**
+ * The heading on that screen already reads "Hardware Wallet Key". Underneath it
+ * the tool printed the key source in words, and for every escrow created now
+ * that is the generic "Hardware wallet", which is the heading over again. The
+ * device name is shown when the file records one and nothing is shown when it
+ * does not. No new fact about the customer's wallet is recorded or inferred to
+ * make that decision.
+ */
+describe('the device name on the hardware step', () => {
+  const named: Array<[string, string]> = [
+    ['COLD_CARD', 'Coldcard hardware wallet'],
+    ['LEDGER', 'Ledger hardware wallet'],
+    ['TREZOR', 'Trezor hardware wallet'],
+  ]
+
+  for (const [keySource, deviceName] of named) {
+    it(`names the device for "${keySource}", which the file records`, async () => {
+      loadFile(recoveryJson({ keySource }))
+      confirmInfo()
+
+      expect(await screen.findByRole('heading', { name: 'Hardware Wallet Key' })).toBeTruthy()
+      expect(screen.getByText(deviceName)).toBeTruthy()
+    })
+  }
+
+  for (const keySource of ['OTHER', 'BITBOX02']) {
+    it(`says nothing beyond the heading for "${keySource}", which names no device`, async () => {
+      loadFile(recoveryJson({ keySource }))
+      confirmInfo()
+
+      // The positive partner. The screen has to be the one under test, and it
+      // has to have rendered, or "the words are absent" is absent for the
+      // wrong reason.
+      expect(await screen.findByRole('heading', { name: 'Hardware Wallet Key' })).toBeTruthy()
+      expect(await screen.findByText(EXPECTED_ADDRESS)).toBeTruthy()
+
+      expect(screen.queryByText('Hardware wallet')).toBeNull()
+    })
+  }
+
+  it('keeps naming a Coldcard, which two live escrows still use', async () => {
+    loadFile(recoveryJson({ keySource: 'COLD_CARD' }))
+    confirmInfo()
+    expect(await screen.findByText('Coldcard hardware wallet')).toBeTruthy()
   })
 })
