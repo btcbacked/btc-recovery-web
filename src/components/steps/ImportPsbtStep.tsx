@@ -12,6 +12,22 @@ const MAX_PSBT_SIZE = 512 * 1024 // 512 KB
 const ACCEPTED_EXTENSIONS = ['.psbt']
 const ACCEPTED_MIME_TYPES = ['application/octet-stream', '']
 
+/**
+ * The magic at the head of a RAW BINARY PSBT: `psbt\xff`.
+ *
+ * FIVE bytes, and the fifth is the whole point. `p`, `s`, `b` and `t` are all
+ * valid base64 characters, so a four byte sniff can be spoofed by an ordinary
+ * base64 file that happens to begin "psbt". `0xff` cannot appear in base64
+ * text at all, so only the trailing byte makes the test unambiguous.
+ */
+const PSBT_BINARY_MAGIC = [0x70, 0x73, 0x62, 0x74, 0xff]
+
+function isBinaryPsbt(buffer: ArrayBuffer): boolean {
+  if (buffer.byteLength < PSBT_BINARY_MAGIC.length) return false
+  const head = new Uint8Array(buffer, 0, PSBT_BINARY_MAGIC.length)
+  return PSBT_BINARY_MAGIC.every((byte, i) => head[i] === byte)
+}
+
 export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps) {
   const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -40,16 +56,36 @@ export function ImportPsbtStep({ error, onImport, onBack }: ImportPsbtStepProps)
       const reader = new FileReader()
       reader.onload = (e) => {
         const result = e.target?.result
-        if (typeof result === 'string') {
-          setHasFileLoaded(true)
-          onImport(result.trim())
+        // Read as bytes and decide from the bytes. Sparrow, which is the wallet
+        // this tool's own guide sends people to, saves a PSBT as raw binary, so
+        // reading as text turned the most likely file in the whole doomsday
+        // scenario into "Invalid PSBT data. Please check the input."
+        //
+        // Anything that is not an ArrayBuffer here is a reader that did not do
+        // what it was asked. It has to be an error rather than a quiet return:
+        // returning silently leaves the customer looking at an upload that
+        // produced no file name, no error and no change of screen.
+        if (!(result instanceof ArrayBuffer)) {
+          setLocalError('Failed to read the file.')
+          setFileName(null)
+          return
         }
+        setHasFileLoaded(true)
+        if (isBinaryPsbt(result)) {
+          onImport(result)
+          return
+        }
+        // Everything else is treated as base64 text, exactly as before: the
+        // paste box below and the files other wallets write are both base64.
+        // No `{ ignoreBOM: true }` here, so a byte order mark is stripped
+        // rather than decoded into a character base64 cannot read.
+        onImport(new TextDecoder().decode(result).trim())
       }
       reader.onerror = () => {
         setLocalError('Failed to read the file.')
         setFileName(null)
       }
-      reader.readAsText(file)
+      reader.readAsArrayBuffer(file)
     },
     [onImport],
   )

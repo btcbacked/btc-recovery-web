@@ -22,13 +22,14 @@ import { BroadcastStep } from '@/components/steps/BroadcastStep'
 import { useRecoveryWizard } from '@/hooks/useRecoveryWizard'
 import type { WizardStep } from '@/hooks/useRecoveryWizard'
 import { useDerivation } from '@/hooks/useDerivation'
-import { useWalletState } from '@/hooks/useWalletState'
+import { useWalletState, balanceCheckKey } from '@/hooks/useWalletState'
 import { usePsbtWorkflow } from '@/hooks/usePsbtWorkflow'
 import { useNetworkConfig } from '@/hooks/useNetworkConfig'
 import { AlertTriangle } from 'lucide-react'
 import { parseDescriptor, usesStandardChildDerivation } from '@/crypto/descriptor-parser'
 import { originPathWarning } from '@/crypto/origin-path'
-import { deriveMultisigAddress } from '@/crypto/address'
+import { deriveEscrowAddress } from '@/crypto/address'
+import { resolveCosignerPositions } from '@/crypto/child-derivation'
 import { withChecksum } from '@/crypto/descriptor'
 import { isPasswordKeySource } from '@/crypto/recovery-file'
 import type { RecoveryFile } from '@/crypto'
@@ -43,12 +44,19 @@ const STEP_LABELS_PATH_A = [
   'Wallet', 'Build', 'Review', 'Export',
 ]
 
+// 'Import' here is Path B, and it is the real thing: a file the OTHER signer
+// produced, being pulled in. Do not sweep it up with the guide label below.
 const STEP_LABELS_PATH_B = [
   ...STEP_LABELS_SHARED,
   'Import', 'Review', 'Sign', 'Broadcast',
 ]
 
-const STEP_LABELS_GUIDE = [...STEP_LABELS_SHARED, 'Import']
+// The guide screen is the customer taking their own signing file OUT to their
+// own wallet, so it is an export. This chip is rendered on the destination
+// screen itself, and `StepIndicator` also puts it in the aria-label, so leaving
+// it as 'Import' meant clicking "Export Your Signing File Instead" and landing
+// on a screen whose progress chip and screen reader both said Import.
+const STEP_LABELS_GUIDE = [...STEP_LABELS_SHARED, 'Export']
 
 /**
  * The only steps that must NOT carry the derivation notice at wizard level,
@@ -128,22 +136,32 @@ export function RecoveryWizard() {
   const { loadWallet, reset: walletReset } = walletState
 
   /**
-   * The escrow address, derived once.
+   * The escrow address, derived once and checked against the file's own record
+   * of it.
    *
-   * Index 0 is not an assumption about where the money is: `deriveMultisigAddress`
-   * resolves each key's own child derivation, so a descriptor pinned to a fixed
-   * child ignores this index and a ranged one takes it, and an escrow has a
-   * single address either way. Memoised because four callbacks below close over
-   * it, and a fresh object each render would defeat their memoisation.
+   * `parsedDescriptor` already has each cosigner's position resolved into it,
+   * so a leg the file places at `/0/1` contributes its own key here. What this
+   * cannot settle is a leg the file says nothing about, which keeps its
+   * wildcard and is derived at index 0. `escrowAddress` is what turns that
+   * guess into either a confirmation or a refusal, and a file that records no
+   * address removes the check rather than passing it.
+   *
+   * Memoised because four callbacks below close over it, and a fresh object
+   * each render would defeat their memoisation.
    *
    * Null when this tool will not reproduce the address: a child derivation
-   * `childIndices` refuses, or an extended key that will not read. That is
-   * deliberate: no address at all is safer than a plausible wrong one.
+   * `childIndices` refuses, an extended key that will not read, or an address
+   * that disagrees with the one the file records. That is deliberate: no
+   * address at all is safer than a plausible wrong one.
    */
   const escrowAddressObj = useMemo(() => {
     if (!wizard.parsedDescriptor || !wizard.recoveryFile) return null
     try {
-      return deriveMultisigAddress(wizard.parsedDescriptor, 0, wizard.recoveryFile.network)
+      return deriveEscrowAddress(
+        wizard.parsedDescriptor,
+        wizard.recoveryFile.network,
+        wizard.recoveryFile.escrowAddress ?? null,
+      )
     } catch {
       return null
     }
@@ -157,8 +175,10 @@ export function RecoveryWizard() {
    * the file is opened and is not a refusal at all.
    *
    * Two ways to get here, and both have to count. The descriptor parsed and
-   * `deriveMultisigAddress` then refused it, or the descriptor did not parse at
-   * all. The second was silent: `parsedDescriptor` stays null, which is
+   * `deriveEscrowAddress` then refused it, either because it could not derive
+   * an address or because the address it derived is not the one the file
+   * records, or the descriptor did not parse at all. The second was silent:
+   * `parsedDescriptor` stays null, which is
    * indistinguishable from "not read yet" without the flag, so the customer got
    * no address, no balance and no warning, and a sign button that did nothing.
    */
@@ -170,10 +190,18 @@ export function RecoveryWizard() {
 
   const handleFileLoaded = useCallback(
     (file: RecoveryFile) => {
+      // Everything the wallet hook holds was fetched for the PREVIOUS file, and
+      // `setRecoveryFile` cannot reach it: it clears the wizard's own derived
+      // state and nothing else. Left standing, a second file inherits the first
+      // one's balance, UTXOs and error, so a customer opening a second loan
+      // sees the first loan's money under the second loan's address. It also
+      // advances the wallet hook's sequence, which abandons any fetch still in
+      // flight for the file being replaced.
+      walletReset()
       setRecoveryFile(file)
       setStep('info')
     },
-    [setRecoveryFile, setStep],
+    [walletReset, setRecoveryFile, setStep],
   )
 
   const handleInfoConfirm = useCallback(() => {
@@ -195,7 +223,12 @@ export function RecoveryWizard() {
     // and never fills this in. The file's own descriptor already carries every
     // public key, which is all the escrow address and balance need.
     try {
-      setParsedDescriptor(parseDescriptor(wizard.recoveryFile.outputDescriptor))
+      setParsedDescriptor(
+        resolveCosignerPositions(
+          parseDescriptor(wizard.recoveryFile.outputDescriptor),
+          wizard.recoveryFile.cosigners,
+        ),
+      )
       setDescriptorUnreadable(false)
     } catch {
       // The descriptor is still shown and can be imported by hand, so this is
@@ -221,9 +254,18 @@ export function RecoveryWizard() {
       if (descriptor) {
         setDescriptor(descriptor)
 
-        // Also extract the xprv from the descriptor for signing later
+        // Also extract the xprv from the descriptor for signing later.
+        //
+        // The positions are resolved onto the REBUILT descriptor, not the
+        // file's own. Rebuilding keeps every origin bracket and every trailing
+        // `/0/*` untouched and only swaps one xpub for its xprv, so the two
+        // agree leg for leg; resolving here is what makes the key the customer
+        // signs with the same key the address was derived from.
         try {
-          const parsed = parseDescriptor(descriptor)
+          const parsed = resolveCosignerPositions(
+            parseDescriptor(descriptor),
+            wizard.recoveryFile.cosigners,
+          )
           setParsedDescriptor(parsed)
           setDescriptorUnreadable(false)
           const privKey = parsed.keys.find((k) => k.isPrivate)
@@ -249,10 +291,32 @@ export function RecoveryWizard() {
   /**
    * Fetch the escrow balance for whichever descriptor we currently hold.
    * Used by every screen that shows the user an address to check against.
+   *
+   * THIS ARGUMENT IS UNTESTED BY DESIGN, and that is a gap in defence in depth,
+   * not a property nothing depends on. Replacing it with null changes nothing
+   * any test or any screen can see, because three gates each refuse first on
+   * the very same comparison:
+   *
+   *  - `escrowAddressObj` above returns null on a mismatch, which empties
+   *    `escrowAddress` and sets `cannotDeriveEscrow`.
+   *  - `HardwareStep` and `WalletGuideStep` render `EscrowSummary`, the thing
+   *    that calls this on mount, only inside `{escrowAddress && ...}`.
+   *  - `WalletViewStep`'s mount effect returns without loading, and its render
+   *    branch drops the Retry button, when `cannotDeriveEscrow` is set.
+   *
+   * Relax any one of those and this argument becomes the last thing standing
+   * between a refused escrow and a balance fetched for it. `useWalletState` is
+   * where the check lives and where its own tests pin it. Do not read the
+   * absence of a failing test here as evidence that null would be safe.
    */
   const handleLoadWallet = useCallback(() => {
     if (!wizard.parsedDescriptor || !wizard.recoveryFile) return
-    loadWallet(wizard.parsedDescriptor, wizard.recoveryFile.network, networkConfig.apiBaseUrl)
+    loadWallet(
+      wizard.parsedDescriptor,
+      wizard.recoveryFile.network,
+      networkConfig.apiBaseUrl,
+      wizard.recoveryFile.escrowAddress ?? null,
+    )
   }, [wizard.parsedDescriptor, wizard.recoveryFile, loadWallet, networkConfig.apiBaseUrl])
 
   // ── Handlers: action-choice step ──────────────────────────────────────────
@@ -431,9 +495,24 @@ export function RecoveryWizard() {
   // False when the escrow is not on the plain ranged branch. The address this
   // tool derives is right either way; what the screens have to say is that
   // other wallet software may show something different.
-  const isStandardDerivation = wizard.parsedDescriptor
-    ? usesStandardChildDerivation(wizard.parsedDescriptor)
-    : true
+  //
+  // Measured on the file's own descriptor, UNRESOLVED. This is a prediction
+  // about the string the customer pastes into another wallet, and that string
+  // is still ranged on every leg. `parsedDescriptor` has the recorded positions
+  // written into it, so measuring there reports the ordinary escrow, whose legs
+  // the platform records at index 0, as one other wallets will disagree with.
+  // A descriptor that will not parse reads as standard: the refusal owns those
+  // screens already, and every reader of this value is gated behind it.
+  const isStandardDerivation = (() => {
+    if (!wizard.recoveryFile) return true
+    try {
+      return usesStandardChildDerivation(
+        parseDescriptor(wizard.recoveryFile.outputDescriptor),
+      )
+    } catch {
+      return true
+    }
+  })()
 
   /**
    * The summary only renders when there is an address, so on a refusal these
@@ -590,6 +669,26 @@ export function RecoveryWizard() {
                 network={network}
                 customEndpoint={networkConfig.customEndpoint}
                 needsCustomEndpoint={networkConfig.needsCustomEndpoint}
+                balance={walletState.balance}
+                isLoadingBalance={walletState.isLoading}
+                balanceError={walletState.error}
+                /* Compared against the endpoint AND the escrow address IN
+                   USE, not a bare "have we loaded" flag. At mount nothing has
+                   been fetched, so the Choose screen says Unknown rather than
+                   reporting the initial 0 as an empty escrow. On regtest it
+                   goes back to Unknown the moment the customer edits the
+                   endpoint, because the balance we are holding was fetched from
+                   the previous one. The address is in the key because every
+                   loan on a network shares one endpoint, so an endpoint-only
+                   comparison reported "checked" for an escrow nobody had asked
+                   about and showed the previous loan's balance against it. */
+                balanceChecked={
+                  walletState.balanceCheckedFor ===
+                  balanceCheckKey(networkConfig.apiBaseUrl, escrowAddress)
+                }
+                /* Same loader every other screen uses, so the address it checks
+                   the derivation against cannot be forgotten here either. */
+                onLoadBalance={handleLoadWallet}
                 onCustomEndpointChange={networkConfig.setCustomEndpoint}
                 onCreateTransaction={handleActionChoice_CreateTx}
                 onSignExisting={handleActionChoice_SignExisting}
@@ -611,15 +710,18 @@ export function RecoveryWizard() {
             <div key="wallet-view" className="animate-step-enter">
               <WalletViewStep
                 parsedDescriptor={wizard.parsedDescriptor}
-                network={wizard.recoveryFile.network}
-                apiBaseUrl={networkConfig.apiBaseUrl}
                 addresses={walletState.addresses}
                 utxos={walletState.utxos}
                 balance={walletState.balance}
                 isLoading={walletState.isLoading}
                 error={walletState.error}
                 cannotDeriveEscrow={cannotDeriveEscrow}
-                onLoadWallet={loadWallet}
+                /* The wizard's own loader, not `loadWallet` itself. This step
+                   used to be handed the raw hook and call it with three
+                   arguments of its own, which made it the one caller that could
+                   forget the address the derivation has to be checked against.
+                   There is now one call site and it cannot omit it. */
+                onLoadWallet={handleLoadWallet}
                 onCreateTransaction={() => setStep('build-tx')}
                 onBack={() => setStep('action-choice')}
               />

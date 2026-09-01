@@ -33,7 +33,6 @@ import { parseDescriptor } from '@/crypto/descriptor-parser'
 import { deriveMultisigAddress, type DerivedAddress } from '@/crypto/address'
 import { deriveSeed, computeFingerprint, deriveXprv, neuterXprv } from '@/crypto/derivation'
 import { getProfile } from '@/crypto/profiles'
-import { truncateHash } from '@/lib/btcFormat'
 import type { WizardStep } from '@/hooks/useRecoveryWizard'
 
 /**
@@ -214,7 +213,7 @@ async function recoverKey(json: string) {
     target: { value: PASSWORD },
   })
   fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
-  fireEvent.click(await screen.findByRole('button', { name: /Next: Import into Wallet/i }))
+  fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
 }
 
 /** The whole of Path A, driven through the UI, up to the sign button. */
@@ -302,13 +301,31 @@ describe('Path A — signing a transaction this page built', () => {
     await screen.findByText('Review Transaction')
   }
 
+  /**
+   * The row in the Outputs table holding this address.
+   *
+   * This used to look the row up by truncateHash(address, 10), which is the
+   * form the table rendered. The table now renders the whole address, so the
+   * selector changed and the assertions did not. It is scoped to the <code>
+   * cells the table draws rather than to the screen, because the summary above
+   * the table also prints the first destination in full, and an unscoped
+   * getByText would now match both of them.
+   */
+  function outputRow(address: string): HTMLElement {
+    const cell = Array.from(document.querySelectorAll('code')).find(
+      (el) => el.textContent === address,
+    )
+    if (!cell) throw new Error(`the outputs table renders no row for ${address}`)
+    return cell.parentElement!
+  }
+
   it('still names the escrow as the owner of the change once it is signed', async () => {
     await signAndReturnToReview()
 
-    const escrowRow = screen.getByText(truncateHash(escrow.address, 10)).parentElement!
+    const escrowRow = outputRow(escrow.address)
     expect(escrowRow.textContent).toContain('change')
 
-    const destinationRow = screen.getByText(truncateHash(DESTINATION, 10)).parentElement!
+    const destinationRow = outputRow(DESTINATION)
     expect(destinationRow.textContent).not.toContain('change')
   })
 

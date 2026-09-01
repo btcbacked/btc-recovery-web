@@ -85,6 +85,9 @@ const file: RecoveryFile = {
   version: 1,
   network: 'testnet',
   outputDescriptor: UNREADABLE_WITHOUT_KEY,
+  // A file that predates both fields, which is what every customer holds today.
+  escrowAddress: null,
+  cosigners: null,
   context: { contractId: 'c', role: 'borrower', threshold: 2, totalKeys: 3 },
   userKey: {
     keySource: 'COLD_CARD',
@@ -432,6 +435,11 @@ describe('ActionChoiceStep names the signing file', () => {
         network="testnet"
         customEndpoint=""
         needsCustomEndpoint={false}
+        balance={0}
+        isLoadingBalance={false}
+        balanceError={null}
+        balanceChecked={false}
+        onLoadBalance={() => {}}
         onCustomEndpointChange={() => {}}
         onCreateTransaction={() => {}}
         onSignExisting={() => {}}
