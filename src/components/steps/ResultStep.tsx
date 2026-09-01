@@ -99,7 +99,7 @@ export function ResultStep({ descriptor, onContinue }: ResultStepProps) {
         onClick={onContinue}
         className="btn-primary w-full rounded-[var(--radius-cta)] px-5 py-2.5 text-sm font-medium text-primary-foreground"
       >
-        Next: Import into Wallet
+        Continue
       </button>
     </div>
   )

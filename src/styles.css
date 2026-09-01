@@ -767,17 +767,44 @@ button {
   transform: scaleX(1);
 }
 
-/* Step numbered list items */
+/* Step numbered list items
+ *
+ * The item must NOT be a flex container. An <li> set to `display: flex` makes
+ * every child its own flex ITEM, so each <strong> becomes a box and each run of
+ * text between them becomes an anonymous box, and a sentence with two bolded
+ * control names in it is laid out as three ragged side by side columns instead
+ * of flowing as one sentence. Every step in all three wallet guide tabs is
+ * written that way, and the damage tracked the number of <strong> elements
+ * exactly: the one step with no bold text rendered correctly.
+ *
+ * It also put the Bitcoin Core <code> command blocks BESIDE their prose rather
+ * than beneath it, for the same reason: `display: block` on a flex child does
+ * not make it a block in the parent's flow.
+ *
+ * So the number is lifted out of the flow entirely and the item stays an
+ * ordinary block. `padding-left` reserves the 20px circle plus its 10px gap.
+ */
 .step-list-item {
   counter-increment: step-counter;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 2px 0;
+  position: relative;
+  padding: 2px 0 2px 30px;
+  /* Pinned so ONE `top` below can align the circle in both consumers. The
+     guide lists carry `text-sm` (a 20px line box) and ExportPsbtStep's list
+     inherits `text-xs` (16px), and against an absolutely positioned number a
+     4px difference in the first line box is a number hanging visibly low.
+     20px is the circle's own height, so the two match by construction. */
+  line-height: 20px;
 }
 
 .step-list-item::before {
   content: counter(step-counter);
+  /* Absolute, so the number is not a sibling box the sentence has to flow
+     around. `top` matches the item's own padding-top, which puts the circle
+     level with the first line of text. No `margin-top` nudge: that existed to
+     correct `align-items: baseline` and would now double count with `top`. */
+  position: absolute;
+  left: 0;
+  top: 2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -788,8 +815,6 @@ button {
   color: var(--primary);
   font-size: 10px;
   font-weight: 600;
-  flex-shrink: 0;
-  margin-top: 1px;
 }
 
 .step-list {

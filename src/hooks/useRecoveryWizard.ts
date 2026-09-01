@@ -57,11 +57,17 @@ export function useRecoveryWizard() {
   }, [])
 
   const setRecoveryFile = useCallback((file: RecoveryFile) => {
-    // The warning belongs to whichever file is loaded, so a second upload must
-    // not inherit the first one's.
+    // Everything derived from a file belongs to THAT file, so a second upload
+    // must not inherit the first one's. `parsedDescriptor` is the one that
+    // matters: it is the gate both sign handlers read, and the wizard checks it
+    // against the NEW file's recorded escrow address, so a stale one from file
+    // A judged against file B is a comparison of two unrelated escrows.
     setState((prev) => ({
       ...prev,
       recoveryFile: file,
+      descriptor: null,
+      xprv: null,
+      parsedDescriptor: null,
       error: null,
       originPathWarning: null,
       descriptorUnreadable: false,
@@ -121,8 +127,12 @@ export function useRecoveryWizard() {
       case 'result': return 5
       case 'action-choice': return 6
 
-      // Guide path (legacy hardware wallet flow)
-      case 'guide': return 6
+      // Guide path (legacy hardware wallet flow). Seven, not six: this path's
+      // labels are the six shared ones plus 'Export', and Export is the screen
+      // being shown. Six highlighted 'Choose', the step already behind them,
+      // and left 'Export' rendered as a future step nobody had reached, in the
+      // chip and in its aria-label both.
+      case 'guide': return 7
 
       // Path A: create transaction
       case 'wallet-view': return 7

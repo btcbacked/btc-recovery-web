@@ -1,4 +1,9 @@
-export { parseRecoveryFile, isPasswordKeySource, describeKeySource } from './recovery-file'
+export {
+  parseRecoveryFile,
+  isPasswordKeySource,
+  describeKeySource,
+  describeKeySourceDevice,
+} from './recovery-file'
 export type { RecoveryFile, Network, Role, KeySource, RecoveryFileContext, RecoveryFileUserKey } from './recovery-file'
 export { validate } from './validation'
 export { isValidFingerprint, isValidHex, isValidDerivationPath } from './validation'
@@ -32,7 +37,6 @@ export {
 } from './child-derivation'
 
 // Address derivation
-export { deriveMultisigAddress } from './address'
 export type { DerivedAddress } from './address'
 
 // Blockchain API

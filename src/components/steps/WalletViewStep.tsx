@@ -5,7 +5,6 @@ import { formatBtc, formatSats, truncateHash } from '@/lib/btcFormat'
 import type { Utxo } from '@/crypto/blockchain-api'
 import type { DerivedAddress } from '@/crypto/address'
 import type { ParsedDescriptor } from '@/crypto/descriptor-parser'
-import type { Network } from '@/crypto'
 
 type WalletViewStepProps = {
   /**
@@ -15,8 +14,6 @@ type WalletViewStepProps = {
    * kept out: kept out, it rendered no step at all and stranded the customer.
    */
   parsedDescriptor: ParsedDescriptor | null
-  network: Network
-  apiBaseUrl: string
   addresses: DerivedAddress[]
   utxos: Utxo[]
   balance: number
@@ -27,20 +24,25 @@ type WalletViewStepProps = {
    *
    * Wider than `parsedDescriptor === null`, and that is the point. On the most
    * common refusal the descriptor parsed perfectly well and
-   * `deriveMultisigAddress` then refused it, so without this flag the step
+   * `deriveEscrowAddress` then refused it, so without this flag the step
    * mounts, asks for a balance it cannot have, and turns the refusal into a
    * failure report with a Retry button that can never succeed.
    */
   cannotDeriveEscrow: boolean
-  onLoadWallet: (parsed: ParsedDescriptor, network: Network, apiBase: string) => void
+  /**
+   * Takes nothing, and that is the point. This step used to be handed the
+   * `useWalletState` loader directly and call it with arguments assembled here,
+   * which made it the one place that could derive an escrow address without the
+   * file's recorded address to check it against. The wizard now assembles the
+   * call once and this step only decides whether to make it.
+   */
+  onLoadWallet: () => void
   onCreateTransaction: () => void
   onBack: () => void
 }
 
 export function WalletViewStep({
   parsedDescriptor,
-  network,
-  apiBaseUrl,
   addresses,
   utxos,
   balance,
@@ -58,7 +60,7 @@ export function WalletViewStep({
     // the derivation throws again inside `loadWallet`, which is what put the
     // failure box on this screen in the first place.
     if (cannotDeriveEscrow || parsedDescriptor === null) return
-    onLoadWallet(parsedDescriptor, network, apiBaseUrl)
+    onLoadWallet()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -110,14 +112,14 @@ export function WalletViewStep({
           <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Escrow Address
           </p>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
             <code className="flex-1 break-all font-mono text-xs text-foreground">
               {escrowAddress}
             </code>
             <CopyButton
               text={escrowAddress}
-              label="Copy"
-              className="shrink-0 px-3 py-1.5 text-xs"
+              variant="icon"
+              ariaLabel="Copy escrow address"
             />
           </div>
         </div>
@@ -163,7 +165,7 @@ export function WalletViewStep({
               <p className="text-xs text-destructive-text">{error}</p>
               <button
                 type="button"
-                onClick={() => onLoadWallet(parsedDescriptor, network, apiBaseUrl)}
+                onClick={onLoadWallet}
                 className="btn-outline inline-flex items-center gap-1.5 rounded-[var(--radius-base)] border border-destructive/30 px-3 py-1.5 text-xs font-medium text-destructive-text hover:bg-destructive/10"
               >
                 <RefreshCw className="size-3" aria-hidden="true" />
