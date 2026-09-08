@@ -118,17 +118,29 @@ describe('WalletGuideStep', () => {
     expect(warningIsOnScreen()).toBe(true)
   })
 
-  it('says the wallet will sign, not that a device is needed, on the password path', () => {
+  it('speaks to the key the customer holds, not to a device, on the password path', () => {
     // The same wrong source of truth, second symptom. A customer who recovered
     // by password and whose descriptor would not parse was told to connect a
     // hardware wallet they have never owned. The fix is the file's own record
     // of where the key lives, which a failed parse cannot take away.
+    //
+    // The positive half was 'already holds your signing key'. That claim was
+    // itself wrong: Sparrow opens this file watch-only and will not sign with
+    // the key in it. The invariant under test is unchanged, which is that the
+    // device sentence never reaches this path.
+    //
+    // `guideProps` sets `cannotDeriveEscrow`, so this is the refusal variant
+    // and Bitcoin Core is the only way out it is allowed to name. Offering
+    // this page's own Create Transaction here would point at a control
+    // `WalletViewStep` does not render on a refusal.
     render(
       <WalletGuideStep {...guideProps} keySource="PASSWORD" descriptor={UNREADABLE_WITH_KEY} />,
     )
 
     const sparrow = document.getElementById('wallet-panel-sparrow')?.textContent ?? ''
-    expect(sparrow).toMatch(/already holds your signing key/i)
+    expect(sparrow).toMatch(/watch-only wallet/i)
+    expect(sparrow).toMatch(/import the same file into Bitcoin Core/)
+    expect(sparrow).not.toMatch(/Create Transaction/)
     expect(sparrow).not.toMatch(/Connect your hardware wallet/i)
   })
 
