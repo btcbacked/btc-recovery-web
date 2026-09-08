@@ -1,6 +1,6 @@
 # BTCBacked Key Recovery Tool
 
-A client-side browser tool for recovering Bitcoin signing keys from a BTCBacked recovery file. All cryptographic operations run locally — nothing is ever sent to a server.
+A client-side browser tool for recovering Bitcoin signing keys from a BTCBacked recovery file. All cryptographic operations run locally, nothing is ever sent to a server.
 
 ## Security Guarantee
 
@@ -152,24 +152,24 @@ Two consequences worth stating plainly:
 After recovering your signing key, you can transact on-chain using one of two paths:
 
 ### Path A: Create Transaction
-1. **Wallet View** — Derive and display all addresses from your descriptor. Connect to blockchain to fetch UTXOs and check balances.
-2. **Build Transaction** — Select UTXOs, specify outputs, and create an unsigned PSBT (Partially Signed Bitcoin Transaction).
-3. **Review & Sign** — Review transaction details and sign with your recovered key.
-4. **Export PSBT** — Export the fully-signed transaction for broadcast via Sparrow, Specter, or a public blockchain broadcaster.
+1. **Wallet View**, Derive and display all addresses from your descriptor. Connect to blockchain to fetch UTXOs and check balances.
+2. **Build Transaction**, Select UTXOs, specify outputs, and create an unsigned PSBT (Partially Signed Bitcoin Transaction).
+3. **Review & Sign**, Review transaction details and sign with your recovered key.
+4. **Export PSBT**, Export the fully-signed transaction for broadcast via Sparrow, Specter, or a public blockchain broadcaster.
 
 ### Path B: Co-Sign & Broadcast
-1. **Import PSBT** — Upload a PSBT created by another party (e.g., the borrower in a multisig scenario).
-2. **Review PSBT** — Inspect transaction inputs, outputs, and co-signer details.
-3. **Sign & Finalize** — Apply your signature to the PSBT. If enough signatures are collected, finalize the transaction.
-4. **Broadcast** — Send the fully-signed transaction to the Bitcoin network via Mempool.space API.
+1. **Import PSBT**, Upload a PSBT created by another party (e.g., the borrower in a multisig scenario).
+2. **Review PSBT**, Inspect transaction inputs, outputs, and co-signer details.
+3. **Sign & Finalize**, Apply your signature to the PSBT. If enough signatures are collected, finalize the transaction.
+4. **Broadcast**, Send the fully-signed transaction to the Bitcoin network via Mempool.space API.
 
 ## Supported Wallets (External Import)
 
 The tool can also output a recovered `xprv` and fully-checksummed output descriptor for import into external wallets:
 
-- **Sparrow Wallet** — import via File > Import Wallet > Descriptor
-- **Specter Desktop** — import via Add Wallet > Import from Descriptor
-- **Bitcoin Core** — `importdescriptors` RPC call
+- **Sparrow Wallet**, import via File > Import Wallet > Descriptor
+- **Specter Desktop**, import via Add Wallet > Import from Descriptor
+- **Bitcoin Core**, `importdescriptors` RPC call
 
 The wizard provides step-by-step import instructions for each wallet.
 
@@ -185,7 +185,7 @@ Network selection is automatic based on your recovery file's network field. The 
 
 ## Security Note
 
-**Private keys never leave the browser.** Only public addresses and fully-signed transactions are sent to the blockchain API. All cryptographic operations (key derivation, PSBT signing, transaction finalization) run entirely in your browser — no server round-trips.
+**Private keys never leave the browser.** Only public addresses and fully-signed transactions are sent to the blockchain API. All cryptographic operations (key derivation, PSBT signing, transaction finalization) run entirely in your browser, no server round-trips.
 
 ## Browser Requirements
 
