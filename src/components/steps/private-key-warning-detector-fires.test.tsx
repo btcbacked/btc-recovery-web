@@ -78,12 +78,21 @@ describe('when the detector fires on a device path customer', () => {
     }
   })
 
-  it('is never told their wallet already holds their signing key', () => {
+  it('is never given the password path advice about moving funds', () => {
+    // The negative used to name 'already holds your signing key'. That sentence
+    // no longer exists on either path, which would leave this assertion true
+    // for a component that renders nothing at all, so it now names the sentence
+    // the password branch actually carries today.
+    //
+    // 'watch-only wallet' and not 'Create Transaction': `guideProps` sets
+    // `cannotDeriveEscrow`, and the password branch drops Create Transaction on
+    // a refusal, so that phrase is absent here whatever the key source and
+    // would discriminate nothing.
     render(<WalletGuideStep {...guideProps} keySource="COLD_CARD" />)
 
     const sparrow = document.getElementById('wallet-panel-sparrow')?.textContent ?? ''
     expect(sparrow).toMatch(/Connect your hardware wallet/i)
-    expect(sparrow).not.toMatch(/already holds your signing key/i)
+    expect(sparrow).not.toMatch(/watch-only wallet/i)
   })
 
   /**

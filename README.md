@@ -1,12 +1,11 @@
 # BTCBacked Key Recovery Tool
 
-A client-side browser tool for recovering Bitcoin signing keys from a BTCBacked recovery file. All cryptographic operations run locally, nothing is ever sent to a server.
+A client-side browser tool for recovering Bitcoin signing keys from a BTCBacked recovery file. All cryptographic operations run locally and your keys never leave your browser. The page contacts mempool.space only to read balances and to broadcast a transaction you approved.
 
 ## Security Guarantee
 
-- **100% offline capable.** Once the page is loaded, you can disconnect from the internet. No requests leave your browser.
 - All PBKDF2 seed derivation, BIP32 key derivation, and descriptor reconstruction happen in-browser using WebCrypto and pure JavaScript libraries.
-- The production Content Security Policy blocks all outbound network connections (`connect-src 'none'`).
+- The production Content Security Policy blocks every outbound connection except the Mempool.space blockchain API (`connect-src 'self' https://mempool.space https://*.mempool.space`).
 
 ## Getting Started
 
@@ -167,7 +166,7 @@ After recovering your signing key, you can transact on-chain using one of two pa
 
 The tool can also output a recovered `xprv` and fully-checksummed output descriptor for import into external wallets:
 
-- **Sparrow Wallet**, import via File > Import Wallet > Descriptor
+- **Sparrow Wallet**, import via File > New Wallet, then the Settings tab: set Policy Type to Multi Signature, paste into Descriptor, and choose Apply
 - **Specter Desktop**, import via Add Wallet > Import from Descriptor
 - **Bitcoin Core**, `importdescriptors` RPC call
 
