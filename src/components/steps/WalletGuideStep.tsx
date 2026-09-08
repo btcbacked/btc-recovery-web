@@ -251,9 +251,7 @@ export function WalletGuideStep({
         >
           <p className="mb-3 text-xs text-muted-foreground">
             Sparrow is the easiest option for most people. It runs on Windows, macOS and Linux.
-            It does not run on a phone, so you need a computer for this. Nunchuk is the usual
-            choice on a phone, but it expects a different file format than the one on this
-            page, so please use a computer if you possibly can.
+            It does not run on a phone, so you need a computer for this.
           </p>
           <ol className="step-list space-y-3">
             <li className="step-list-item text-sm text-foreground">
@@ -293,11 +291,41 @@ export function WalletGuideStep({
                 </>
               )}
             </li>
+            {/*
+              The two paths do not share an opening sentence. A password
+              customer holds the key, but Sparrow will not sign with it from
+              this file, so pointing them at the Send tab first sends them to a
+              control that cannot do the job.
+
+              The way out is then gated a second time, on the same fact
+              `mismatchAdvice` reads. "Come back to this page and choose Create
+              Transaction" is only true while this page can build one, and on a
+              refusal it cannot: `WalletViewStep` returns its refusal branch
+              instead of the transaction screen, so the customer would be sent
+              to a control that is not there. Bitcoin Core survives the refusal
+              because it keeps the key and never needed this page to derive
+              anything, so it is the sentence that stays.
+            */}
             <li className="step-list-item text-sm text-foreground">
-              To move funds, use the <strong>Send</strong> tab.{' '}
-              {isPasswordPath
-                ? 'Sparrow already holds your signing key and will sign for you.'
-                : 'Connect your hardware wallet when Sparrow asks for a signature, and approve it on the device.'}
+              {isPasswordPath ? (
+                <>
+                  Sparrow opens this file as a watch-only wallet: it shows your balance and
+                  addresses, but it will not sign with the key inside, so its{' '}
+                  <strong>Send</strong> tab cannot move your funds. To move funds with this key,{' '}
+                  {!cannotDeriveEscrow && (
+                    <>
+                      come back to this page and choose <strong>Create Transaction</strong>, or{' '}
+                    </>
+                  )}
+                  import the same file into Bitcoin Core, which keeps the key and can sign your
+                  part.
+                </>
+              ) : (
+                <>
+                  To move funds, use the <strong>Send</strong> tab. Connect your hardware wallet
+                  when Sparrow asks for a signature, and approve it on the device.
+                </>
+              )}
             </li>
           </ol>
         </div>
