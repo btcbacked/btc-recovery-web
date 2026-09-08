@@ -118,6 +118,51 @@ function confirmInfo() {
   fireEvent.click(screen.getByRole('button', { name: /Confirm and Continue/i }))
 }
 
+/**
+ * The last Sparrow step, which is the one that differs by key source.
+ *
+ * Read whole rather than searched, so the assertions below can be equalities.
+ * A substring match cannot see a sentence that has grown a wrong opening, and
+ * that is exactly the defect this step was changed to fix: the password branch
+ * used to be prefixed with "To move funds, use the Send tab.", pointing a
+ * customer at a control that cannot spend from this file.
+ */
+function sparrowLastStep(): string {
+  const steps = document.getElementById('wallet-panel-sparrow')?.querySelectorAll('li')
+  return steps?.[steps.length - 1]?.textContent ?? ''
+}
+
+/** The Sparrow intro paragraph, verbatim. */
+const SPARROW_INTRO =
+  'Sparrow is the easiest option for most people. It runs on Windows, macOS and Linux. ' +
+  'It does not run on a phone, so you need a computer for this.'
+
+function sparrowIntro(): string {
+  return document.getElementById('wallet-panel-sparrow')?.querySelector('p')?.textContent ?? ''
+}
+
+/** The whole of the password branch of that step, verbatim. */
+const PASSWORD_LAST_STEP =
+  'Sparrow opens this file as a watch-only wallet: it shows your balance and addresses, ' +
+  'but it will not sign with the key inside, so its Send tab cannot move your funds. ' +
+  'To move funds with this key, come back to this page and choose Create Transaction, ' +
+  'or import the same file into Bitcoin Core, which keeps the key and can sign your part.'
+
+/**
+ * The same step for a customer whose escrow this page cannot derive.
+ *
+ * "Come back to this page and choose Create Transaction" is only true while the
+ * page can build one. On a refusal `WalletViewStep` returns its refusal branch
+ * and there is no such control, so the clause is dropped rather than sending a
+ * frightened customer to a button that is not there. Bitcoin Core survives the
+ * refusal because it holds the key itself.
+ */
+const PASSWORD_LAST_STEP_NO_ESCROW =
+  'Sparrow opens this file as a watch-only wallet: it shows your balance and addresses, ' +
+  'but it will not sign with the key inside, so its Send tab cannot move your funds. ' +
+  'To move funds with this key, import the same file into Bitcoin Core, which keeps the ' +
+  'key and can sign your part.'
+
 beforeEach(() => stubFetch())
 afterEach(() => {
   cleanup()
@@ -986,11 +1031,22 @@ describe('import instructions', () => {
     expect(panel?.textContent).not.toMatch(/first receive address/i)
   })
 
-  it('names Nunchuk for phone users without promising it will work', async () => {
+  it('no longer names Nunchuk as the phone option', async () => {
+    // Was: it('names Nunchuk for phone users without promising it will work')
+    // asserting toMatch(/Nunchuk/) and /expects a different file format/. The
+    // sentence named a wallet that cannot open this file and then asked the
+    // reader to use a computer anyway, so it did no work the next sentence was
+    // not already doing. Searched across the whole guide, not just the Sparrow
+    // panel: all three panels stay mounted, so a sentence merely moved to
+    // another tab would slip past a panel-scoped check.
     await openGuide()
-    const panel = document.getElementById('wallet-panel-sparrow')
-    expect(panel?.textContent).toMatch(/Nunchuk/)
-    expect(panel?.textContent).toMatch(/expects a different file format/i)
+    expect(document.body.textContent).not.toMatch(/Nunchuk/i)
+    expect(document.body.textContent).not.toMatch(/expects a different file format/i)
+    // POSITIVE PARTNER. Both negatives alone pass on a panel that failed to
+    // render and on an intro paragraph deleted outright.
+    expect(document.getElementById('wallet-panel-sparrow')?.textContent).toMatch(
+      /does not run on a phone/i,
+    )
   })
 
   it('no longer explains a mismatch as Sparrow having built a different wallet', async () => {
@@ -1010,10 +1066,12 @@ describe('import instructions', () => {
     )
   })
 
-  it('says Sparrow needs a computer', async () => {
+  it('says Sparrow needs a computer, and says only that', async () => {
+    // Equality, so the paragraph cannot quietly regrow a sentence. It carried
+    // one naming Nunchuk as the phone option, which pointed the reader at a
+    // wallet that cannot open this file.
     await openGuide()
-    const panel = document.getElementById('wallet-panel-sparrow')
-    expect(panel?.textContent).toMatch(/does not run on a phone/i)
+    expect(sparrowIntro()).toBe(SPARROW_INTRO)
   })
 
   it('no longer sends Sparrow users to a File then Import Wallet menu', async () => {
@@ -1118,9 +1176,14 @@ describe('import instructions', () => {
 // nothing on its own. The customer can still walk action-choice, import-psbt
 // and review-psbt with a working xprv in hand, and the sign button at the end
 // of that walk is the thing this locks down.
+//
+// The derivable file is in scope here too, and not incidentally. `supportedJson`
+// differs from the refused files in one thing only, which is whether the
+// descriptor parses, so it is what turns "the refusal did it" from an
+// assumption into a measurement. Several tests below assert on that walk.
 // ---------------------------------------------------------------------------
 
-describe('signing for an escrow this tool refuses to derive', () => {
+describe('signing for an escrow this tool refuses to derive, against one it can', () => {
   const PASSWORD = 'correct horse battery staple'
   const SALT = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
   const ACCOUNT_PATH = "m/48'/1'/0'/2'"
@@ -1489,9 +1552,29 @@ describe('signing for an escrow this tool refuses to derive', () => {
     expect(screen.getAllByText(/Keep this secret/i).length).toBeGreaterThan(0)
 
     // And the same wrong gate governed this line, so it is pinned here too.
-    expect(document.getElementById('wallet-panel-sparrow')?.textContent).toMatch(
-      /already holds your signing key/i,
-    )
+    // Equality, not a substring: the whole step is compared, so a reappearing
+    // "To move funds, use the Send tab." opening fails it rather than hiding
+    // behind a passing search for the rest of the sentence.
+    //
+    // This fixture cannot derive an escrow, so it is the variant that must not
+    // offer this page's own Create Transaction. The named absence below is
+    // implied by the equality, and is kept because it is the specific
+    // regression: the screen would be sending the customer to a control that
+    // `WalletViewStep` does not render on a refusal.
+    expect(sparrowLastStep()).toBe(PASSWORD_LAST_STEP_NO_ESCROW)
+    expect(sparrowLastStep()).not.toMatch(/Create Transaction/)
+  })
+
+  it('does offer Create Transaction to a password customer whose escrow it can derive', async () => {
+    // The partner to the assertion above, and the reason it is not simply the
+    // sentence being deleted. `supportedJson` differs from `unreadableJson` in
+    // one thing only, which is whether the descriptor parses, so the pair
+    // isolates the gate rather than the copy.
+    await reachChooseScreen(supportedJson)
+    fireEvent.click(screen.getByRole('button', { name: /Export Your Signing File Instead/i }))
+    await screen.findByRole('tablist')
+
+    expect(sparrowLastStep()).toBe(PASSWORD_LAST_STEP)
   })
 
   /**
