@@ -8,3 +8,7 @@ dist
 npm-debug.log*
 .vite/
 coverage/
+
+# Local agent instructions, never published
+CLAUDE.md
+.claude/
