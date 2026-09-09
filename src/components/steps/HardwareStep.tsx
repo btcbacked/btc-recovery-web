@@ -72,9 +72,7 @@ export function HardwareStep({
           <p className="mt-1 text-sm font-medium text-foreground">{deviceName}</p>
         )}
         <p className="mt-2 text-sm text-muted-foreground">
-          There is no password to enter, because your private key stays on the device and
-          never reaches this browser. Copy the escrow file below into your wallet
-          app, then approve payments on your device.
+          Copy the escrow file below into your wallet app, then approve payments on your device.
         </p>
       </div>
 

@@ -54,8 +54,8 @@ type Tab = (typeof tabs)[number]
  * every leg, and each loan sits at its own child index under one shared
  * account, so a customer's second loan is at index 1 and their third at index
  * 2. Printing index 0 alone told every customer past their first loan that
- * their address did not match, on a screen that says a mismatch means stop and
- * move no Bitcoin.
+ * their address did not match, on a screen that tells them to check the
+ * numbers match before they move anything.
  */
 const ADDRESS_SCAN_END = 100
 
@@ -138,33 +138,36 @@ export function WalletGuideStep({
   const fileNameTitle = isPasswordPath ? 'Signing File' : 'Escrow File'
 
   /*
-   * What to do when the imported wallet disagrees with the address or balance
-   * above. Three cases, not two, and getting it wrong is not a detail.
+   * What to say when the imported wallet disagrees with the address or balance
+   * above. Three cases, and only one of them carries a sentence.
    *
-   * Ordinary escrow: a difference means something is wrong, so say so.
+   * Ordinary escrow: the step ends after the check and names nobody. It used to
+   * end with "stop and contact BTCBacked support", and that was dropped: this
+   * tool exists for when nobody at BTCBacked is reachable, so it must not tell
+   * the reader to contact BTCBacked. Nothing replaces the sentence.
    *
    * Pinned escrow: the notice on this same screen tells the customer to EXPECT
-   * a difference, so telling them in the next breath that a difference means
-   * stop and call support contradicts it, and does so while they are already
-   * frightened. They need the wording that says nothing is wrong and points
-   * them back here.
+   * a difference, so they need the wording that says nothing is wrong and
+   * points them back here. This is the only branch that says anything.
    *
    * No address at all: there is nothing above to compare against, and pointing
-   * them back to a page that has just said it cannot open this escrow is the
-   * worst of the three. Say nothing.
+   * them back to a page that has just said it cannot open this escrow is worse
+   * than silence. Say nothing.
    *
-   * Emptying this line is not on its own enough, and that was the defect. Every
+   * Each site appends the sentence only when there is one, so a silent branch
+   * leaves no space after the step's own full stop.
+   *
+   * Emptying this line is not on its own enough for the no-address case. Every
    * tab's "check it worked" step is written around an address and a balance
    * "shown above", and on a refusal there is neither: the intro on this same
-   * screen says so three lines earlier. Each of those steps is therefore
-   * three way at its own site too, and sends the customer to what their wallet
-   * shows instead of to a comparison they cannot make.
+   * screen says so three lines earlier. Each of those steps therefore branches
+   * on the refusal at its own site too, and sends the customer to what their
+   * wallet shows instead of to a comparison they cannot make.
    */
-  const mismatchAdvice = (() => {
-    if (cannotDeriveEscrow) return ''
-    if (isStandardDerivation) return 'If either differs, stop and contact BTCBacked support.'
-    return 'If either differs, this wallet cannot open your escrow. Nothing is wrong with your funds. Close it and move your Bitcoin from this page instead.'
-  })()
+  const mismatchAdvice =
+    cannotDeriveEscrow || isStandardDerivation
+      ? ''
+      : 'If either differs, this wallet cannot open your escrow. Nothing is wrong with your funds. Close it and move your Bitcoin from this page instead.'
 
   return (
     <div className="space-y-6">
@@ -286,8 +289,8 @@ export function WalletGuideStep({
               ) : (
                 <>
                   Check it worked. The balance must match the balance shown above, and the escrow
-                  address shown above must appear in the <strong>Addresses</strong> tab.{' '}
-                  {mismatchAdvice}
+                  address shown above must appear in the <strong>Addresses</strong> tab.
+                  {mismatchAdvice && ` ${mismatchAdvice}`}
                 </>
               )}
             </li>
@@ -362,7 +365,7 @@ export function WalletGuideStep({
             <li className="step-list-item font-medium text-sm text-foreground">
               {cannotDeriveEscrow
                 ? 'Check what Specter shows. This page has no address and no balance for you to compare against, so read both from Specter itself.'
-                : `Check it worked. The balance must match the balance shown above, and the escrow address must appear in the wallet's address list. ${mismatchAdvice}`}
+                : `Check it worked. The balance must match the balance shown above, and the escrow address must appear in the wallet's address list.${mismatchAdvice && ` ${mismatchAdvice}`}`}
             </li>
           </ol>
         </div>
@@ -411,7 +414,7 @@ export function WalletGuideStep({
               <code className="rounded bg-accent px-1 text-xs font-mono">getbalance</code>
               {cannotDeriveEscrow
                 ? ' for the balance.'
-                : ` and check it matches the balance above. ${mismatchAdvice}`}
+                : ` and check it matches the balance above.${mismatchAdvice && ` ${mismatchAdvice}`}`}
             </li>
           </ol>
         </div>
