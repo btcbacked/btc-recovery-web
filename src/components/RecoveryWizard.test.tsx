@@ -132,6 +132,22 @@ function sparrowLastStep(): string {
   return steps?.[steps.length - 1]?.textContent ?? ''
 }
 
+/** Open one tab of the guide and return its panel. */
+function panelFor(tab: string): HTMLElement {
+  fireEvent.click(screen.getByRole('tab', { name: tab }))
+  const panel = document.getElementById(`wallet-panel-${tab.replace(/\s+/g, '-').toLowerCase()}`)
+  if (!panel) throw new Error(`no panel rendered for ${tab}`)
+  return panel
+}
+
+/** The "check it worked" step of one tab, as rendered and untrimmed. */
+function checkStep(tab: string): string {
+  const steps = Array.from(panelFor(tab).querySelectorAll('li'))
+  const step = steps.find((li) => li.textContent?.startsWith('Check it worked.'))
+  if (!step) throw new Error(`no check step rendered for ${tab}`)
+  return step.textContent ?? ''
+}
+
 /** The Sparrow intro paragraph, verbatim. */
 const SPARROW_INTRO =
   'Sparrow is the easiest option for most people. It runs on Windows, macOS and Linux. ' +
@@ -313,9 +329,10 @@ describe('an escrow other wallet software will disagree with', () => {
     expect(await screen.findByText(NOTICE)).toBeTruthy()
     // The line this used to guard against, telling the reader to compare the
     // address against another wallet and to stop if the two differ, is gone
-    // from `EscrowSummary`, which is what this screen renders. It still exists
-    // in `WalletGuideStep`, and the two tests at the end of this block are
-    // where both of its branches are asserted.
+    // from `EscrowSummary`, which is what this screen renders, and the "stop
+    // and contact BTCBacked support" ending is gone from `WalletGuideStep` as
+    // well. The tests at the end of this block are where the guide's two
+    // branches are asserted.
   })
 
   it('still shows the address and the balance, because both are correct', async () => {
@@ -354,9 +371,15 @@ describe('an escrow other wallet software will disagree with', () => {
     expect(card?.textContent).not.toMatch(/contact BTCBacked support/i)
     expect(card?.textContent).toMatch(/this wallet cannot open your escrow/i)
     expect(card?.textContent).toMatch(/Nothing is wrong with your funds/i)
+    expect(checkStep('Sparrow')).toMatch(/Addresses tab\. If either differs/)
   })
 
-  it('still sends an ordinary escrow to support when the numbers disagree', async () => {
+  it('ends the check on an ordinary escrow without naming anyone to contact', async () => {
+    // The line after the check used to say "stop and contact BTCBacked support"
+    // and nothing replaces it, because this tool exists for when nobody at
+    // BTCBacked is reachable. Each step is read whole and untrimmed: the
+    // dropped sentence was joined on with a space, so a step that now ends in
+    // that space, or carries two spaces in a row, fails here.
     loadFile(recoveryJson())
     confirmInfo()
     await screen.findByText(EXPECTED_ADDRESS)
@@ -364,9 +387,44 @@ describe('an escrow other wallet software will disagree with', () => {
     fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
-    const card = screen.getByRole('tablist').parentElement
-    expect(card?.textContent).toMatch(/contact BTCBacked support/i)
-    expect(card?.textContent).not.toMatch(/this wallet cannot open your escrow/i)
+    for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
+      const step = checkStep(tab)
+      expect(step).not.toMatch(/contact|support/i)
+      expect(step).not.toMatch(/this wallet cannot open your escrow/i)
+      expect(step).not.toMatch(/\s$|\s{2}/)
+    }
+    expect(checkStep('Sparrow')).toMatch(/Addresses tab\.$/)
+  })
+
+  it('names nobody to contact on the device screen or on any tab of the guide', async () => {
+    // This tool exists for when nobody at BTCBacked is reachable, so no screen
+    // on this path may tell the reader to contact BTCBacked or anyone else.
+    // Both kinds of escrow walk, because the pinned one is the branch that
+    // still says something after the check. Each screen is also proven
+    // populated, or an empty page would pass this.
+    for (const [descriptor, address] of [
+      [MODERN_DESCRIPTOR, EXPECTED_ADDRESS],
+      [PINNED, PINNED_ADDRESS],
+    ] as const) {
+      loadFile(recoveryJson({ outputDescriptor: descriptor }))
+      confirmInfo()
+      await screen.findByText(address)
+      expect(screen.getByRole('heading', { name: 'Hardware Wallet Key' })).toBeTruthy()
+      expect(
+        screen.getByText(
+          'Copy the escrow file below into your wallet app, then approve payments on your device.',
+        ),
+      ).toBeTruthy()
+      expect(document.body.textContent).not.toMatch(/contact|support/i)
+
+      fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
+      await screen.findByRole('tablist')
+      for (const tab of ['Sparrow', 'Specter', 'Bitcoin Core']) {
+        expect(checkStep(tab)).not.toMatch(/contact|support/i)
+      }
+      expect(document.body.textContent).not.toMatch(/contact|support/i)
+      cleanup()
+    }
   })
 })
 
@@ -565,13 +623,6 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     await screen.findByRole('tablist')
   }
 
-  function panelFor(tab: string): HTMLElement {
-    fireEvent.click(screen.getByRole('tab', { name: tab }))
-    const panel = document.getElementById(`wallet-panel-${tab.replace(/\s+/g, '-').toLowerCase()}`)
-    if (!panel) throw new Error(`no panel rendered for ${tab}`)
-    return panel
-  }
-
   it('does not send them to compare against an address and balance shown above', async () => {
     // The screen contradicted itself. Its own intro says there is no address
     // or balance here to compare against, and three lines later every tab told
@@ -650,9 +701,10 @@ describe('a recovery file this tool refuses to derive an address from', () => {
     fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
-    // Three endings are possible here and only silence is true. Support is
-    // wrong for the same reason it is wrong on a pinned escrow, and "come back
-    // and move it from this page" contradicts the notice directly above it.
+    // Two endings are possible here and only silence is true: "come back and
+    // move it from this page" contradicts the notice directly above it. Naming
+    // support is no longer an ending anywhere in this tool, and the first
+    // assertion keeps it out of this branch as well.
     const card = screen.getByRole('tablist').parentElement
     expect(card?.textContent).not.toMatch(/contact BTCBacked support/i)
     expect(card?.textContent).not.toMatch(/move your Bitcoin from this page/i)
