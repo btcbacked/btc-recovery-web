@@ -23,10 +23,12 @@ type EscrowSummaryProps = {
    * Bitcoin out, and it named a support desk in the one tool that exists for
    * when there is no support desk to name.
    *
-   * The compare-and-ask-support instruction itself is NOT gone from the tool.
-   * `WalletGuideStep` still carries it on its own true branch, where it belongs:
-   * that screen is walking the customer through an import into another wallet,
-   * so a difference there is a botched import and not a fact about the escrow.
+   * The compare-and-ask-support instruction is gone from the whole tool now.
+   * `WalletGuideStep` still asks the customer to compare what their wallet
+   * shows against the address and balance here, because that screen is walking
+   * them through an import into another wallet, but it names nobody to contact
+   * when the two differ. On a pinned escrow it says the wallet cannot open the
+   * escrow and points the customer back to this page.
    */
   isStandardDerivation: boolean
   onLoad: () => void
@@ -38,10 +40,10 @@ type EscrowSummaryProps = {
  * becomes a visible mismatch rather than a silent zero balance.
  *
  * It shows those three facts and says nothing else about them. This component
- * does not instruct the reader to compare them anywhere and names nobody to
- * contact if they differ; `WalletGuideStep` still does both, on the screen that
- * is walking them through an import. See `isStandardDerivation` for what this
- * component dropped and why.
+ * does not instruct the reader to compare them anywhere; `WalletGuideStep`
+ * does, on the screen that is walking them through an import. Nobody is named
+ * to contact if they differ, here or there. See `isStandardDerivation` for
+ * what this component dropped and why.
  *
  * Loads its own data on mount through the callback it is given.
  */

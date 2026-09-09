@@ -209,22 +209,28 @@ describe('an ordinary escrow with every leg at zero', () => {
     expect(screen.queryByText(NOTICE)).toBeNull()
   })
 
-  it('still tells the customer to stop and ask if their wallet shows something else', async () => {
+  it('ends the guide check in silence rather than with the pinned wording', async () => {
     // The half that is about the money. Predicting a difference switches the
-    // guide's advice from "stop and contact BTCBacked support" to "this wallet
-    // cannot open your escrow. Nothing is wrong with your funds", so the one
-    // instruction that catches a genuinely botched import is turned off for the
-    // whole default population, and a customer whose import really did fail is
-    // told nothing is wrong.
+    // line after the guide's check from silence to "this wallet cannot open
+    // your escrow. Nothing is wrong with your funds", so a customer in the
+    // default population whose import really did fail is told nothing is
+    // wrong. On an ordinary escrow the step ends after the check and names
+    // nobody: the "stop and contact BTCBacked support" line it once carried
+    // was dropped.
     reachHardwareStep(fileJson({ escrowAddress: address, cosigners: allZero }))
     await screen.findByText(address)
 
     fireEvent.click(screen.getByRole('button', { name: /View Export Instructions/i }))
     await screen.findByRole('tablist')
 
-    const card = screen.getByRole('tablist').parentElement
-    expect(card?.textContent).toMatch(/contact BTCBacked support/i)
-    expect(card?.textContent).not.toMatch(/this wallet cannot open your escrow/i)
+    const steps = Array.from(
+      document.getElementById('wallet-panel-sparrow')?.querySelectorAll('li') ?? [],
+    )
+    const step = steps.find((li) => li.textContent?.startsWith('Check it worked.'))
+    if (!step) throw new Error('the Sparrow check step did not render')
+    expect(step.textContent).toMatch(/Addresses tab\.$/)
+    expect(step.textContent).not.toMatch(/contact|support/i)
+    expect(step.textContent).not.toMatch(/this wallet cannot open your escrow/i)
   })
 })
 
