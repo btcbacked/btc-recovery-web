@@ -46,6 +46,7 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
           className="input-premium w-full rounded-[var(--radius-surface)] border border-border bg-[var(--input-bg)] px-5 py-4 pr-14 text-base text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none"
           autoFocus
           autoComplete="off"
+          spellCheck={false}
         />
         <button
           type="button"
