@@ -73,6 +73,7 @@ export function UploadStep({ onFileLoaded }: UploadStepProps) {
               onChange={(e) => setPasteValue(e.target.value)}
               placeholder='Paste your recovery file JSON here...'
               className="h-32 w-full resize-none rounded-[var(--radius-base)] border border-border bg-[var(--input-bg)] px-3 py-2 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-2 focus:ring-ring/30"
+              spellCheck={false}
             />
             <button
               type="button"
