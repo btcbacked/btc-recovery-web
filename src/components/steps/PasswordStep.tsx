@@ -13,8 +13,9 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // Guard: don't submit whitespace-only input
-    if (password.trim()) onSubmit(password)
+    // Guard: don't submit an empty field. Spaces can be a password on their
+    // own, so the value goes through exactly as it was typed.
+    if (password) onSubmit(password)
   }
 
   return (
@@ -71,7 +72,7 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
       <div className="flex flex-col gap-3">
         <button
           type="submit"
-          disabled={!password.trim()}
+          disabled={!password}
           className="btn-primary w-full rounded-[var(--radius-cta)] px-5 py-2.5 text-sm font-medium text-primary-foreground disabled:pointer-events-none disabled:bg-[var(--button-primary-disabled-bg)] disabled:text-[var(--button-primary-disabled-fg)] disabled:opacity-100 disabled:shadow-none"
         >
           Recover Key
