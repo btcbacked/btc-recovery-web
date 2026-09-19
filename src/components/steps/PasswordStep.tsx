@@ -36,8 +36,11 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
         </div>
       )}
 
-      {/* Premium password input — larger, more padding, ring expansion on focus */}
+      {/* Premium password input, larger, more padding, ring expansion on focus */}
       <div className="relative">
+        {/* The eye button turns this into a text input, and a phone keyboard
+            capitalises and autocorrects a text input. The four attributes
+            below keep the password exactly as it was typed. */}
         <input
           type={showPassword ? 'text' : 'password'}
           value={password}
@@ -47,6 +50,8 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
           autoFocus
           autoComplete="off"
           spellCheck={false}
+          autoCorrect="off"
+          autoCapitalize="off"
         />
         <button
           type="button"
