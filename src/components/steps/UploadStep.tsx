@@ -42,9 +42,10 @@ export function UploadStep({ onFileLoaded }: UploadStepProps) {
       <div className="rounded-[var(--radius-base)] border border-border bg-accent/50 px-4 py-3 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">What is the recovery file?</p>
         <p className="mt-1">
-          When you created your BTCBacked contract, a <code className="font-mono">.json</code> file
-          was downloaded to your device. It contains your encrypted key material and your escrow
-          file. Check your Downloads folder or wherever you saved it at setup.
+          This is the <code className="font-mono">.json</code> file you downloaded from your loan
+          page in BTCBacked, or through the link in the email you received when your collateral
+          was secured. It holds your loan's public details and, for a password key, the salt. It
+          holds no password or private key. Check your Downloads folder or wherever you saved it.
         </p>
       </div>
 
