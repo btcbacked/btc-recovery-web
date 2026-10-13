@@ -9,10 +9,18 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     // Vitest replaces CSS imports with empty strings by default, including
-    // `?raw` ones. styles.theme.test.ts reads both of these files as text to
-    // compile them with Tailwind, so they have to be exempt. Scoped to these
-    // two files so every other CSS import stays stubbed.
-    css: { include: [/src[\\/]styles\.css/, /tailwindcss[\\/]index\.css/] },
+    // `?raw` ones. styles.theme.test.ts reads styles.css and Tailwind's
+    // index.css as text to compile them with Tailwind, and
+    // external-hosts.test.ts reads every CSS file under src and the Outfit
+    // font package's index.css as text to check them, so these have to be
+    // exempt. Scoped to these files so every other CSS import stays stubbed.
+    css: {
+      include: [
+        /src[\\/].*\.css/,
+        /@fontsource-variable[\\/]outfit[\\/]index\.css/,
+        /tailwindcss[\\/]index\.css/,
+      ],
+    },
     globals: true,
     coverage: {
       provider: 'v8',
