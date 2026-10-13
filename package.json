@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@bitcoinerlab/secp256k1": "^1.2.0",
+    "@fontsource-variable/outfit": "5.3.0",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",

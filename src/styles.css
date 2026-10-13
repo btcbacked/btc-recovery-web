@@ -9,7 +9,7 @@
 body {
   @apply m-0;
   font-family:
-    'Outfit',
+    'Outfit Variable',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
@@ -42,7 +42,7 @@ pre,
 
 :root {
   /* Typography */
-  --font-primary: 'Outfit', sans-serif;
+  --font-primary: 'Outfit Variable', sans-serif;
   --font-mono: 'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
   --font-weight-light: 300;
   --font-weight-regular: 400;
