@@ -4,7 +4,7 @@ export function SecurityBadge() {
   return (
     <div
       role="note"
-      className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[var(--text-body-sm)] text-muted-foreground"
+      className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-[length:var(--text-body-sm)] text-muted-foreground"
       style={{
         boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
       }}
@@ -17,7 +17,7 @@ export function SecurityBadge() {
           aria-hidden="true"
         />
       </span>
-      <span>Runs locally. No data leaves your browser.</span>
+      <span>Runs locally. Your keys never leave your browser.</span>
     </div>
   )
 }

@@ -66,7 +66,7 @@ export function PasswordStep({ onSubmit, error, onBack }: PasswordStepProps) {
 
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <ShieldCheck className="size-3.5 shrink-0 text-success" aria-hidden="true" />
-        <span>Your password never leaves this device. All operations happen locally.</span>
+        <span>Your password never leaves this device.</span>
       </div>
 
       <div className="flex flex-col gap-3">
