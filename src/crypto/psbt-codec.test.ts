@@ -10,6 +10,9 @@ import { psbtToBase64, psbtFromBase64, psbtToBuffer, psbtFromBuffer } from './ps
 import { bitcoin, ecc } from './bitcoin-lib'
 import { BIP32Factory } from 'bip32'
 import { RecoveryError } from './errors'
+import { analyzePsbt } from './psbt-finalizer'
+import type { Network } from './recovery-file'
+import { SPARROW_BINARY_PSBT_BASE64 } from './__fixtures__/sparrow-binary-psbt'
 import { Buffer } from 'buffer'
 
 const bip32 = BIP32Factory(ecc)
@@ -235,5 +238,172 @@ describe('psbtFromBuffer', () => {
     // Keep only the magic bytes — not a complete PSBT
     const truncated = Buffer.from(buf.subarray(0, 5))
     expect(() => psbtFromBuffer(truncated, 'testnet')).toThrow(RecoveryError)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The import guard: the amounts shown are the amounts signed
+//
+// Each row is decoded both ways the import step decodes (pasted base64 and a
+// binary file). A refused row must fail for its own reason, so the technical
+// detail is matched too: a row refused by accident would let its guard
+// condition be deleted with the suite still green.
+// ---------------------------------------------------------------------------
+
+/** The escrow's funding transaction: two outputs of different value. */
+const FUNDING = new bitcoin.Transaction()
+FUNDING.version = 2
+FUNDING.addInput(Buffer.alloc(32, 9), 0)
+FUNDING.addOutput(SCRIPT_OUTPUT, BigInt(1_000_000))
+FUNDING.addOutput(SCRIPT_OUTPUT, BigInt(950_000))
+
+/** A different transaction with the very same outputs, so only its txid differs. */
+const DECOY = new bitcoin.Transaction()
+DECOY.version = 2
+DECOY.addInput(Buffer.alloc(32, 8), 0)
+DECOY.addOutput(SCRIPT_OUTPUT, BigInt(1_000_000))
+DECOY.addOutput(SCRIPT_OUTPUT, BigInt(950_000))
+
+const PREV_TX = Buffer.from(FUNDING.toBuffer())
+const SEND = BigInt(900_000)
+
+/** The witnessUtxo a correct wallet writes for output `vout` of FUNDING. */
+function honest(vout: number) {
+  return { script: SCRIPT_OUTPUT, value: FUNDING.outs[vout]!.value }
+}
+
+/** A PSBT spending outputs of FUNDING with the given UTXO records. */
+function spending(...inputs: Array<{ index: number; witnessUtxo?: object; nonWitnessUtxo?: Buffer }>) {
+  const psbt = new bitcoin.Psbt({ network: NET })
+  for (const input of inputs) {
+    psbt.addInput({ hash: FUNDING.getHash(), witnessScript: WITNESS_SCRIPT, ...input } as any)
+  }
+  psbt.addOutput({ address: DESTINATION, value: SEND })
+  return psbt
+}
+
+const DECODERS = [
+  {
+    form: 'pasted base64',
+    decode: (psbt: bitcoin.Psbt, network: Network) => psbtFromBase64(psbt.toBase64(), network),
+    refusal: 'Invalid PSBT data. Please check the input.',
+  },
+  {
+    form: 'binary file',
+    decode: (psbt: bitcoin.Psbt, network: Network) => psbtFromBuffer(psbtToBuffer(psbt), network),
+    refusal: 'Invalid PSBT file. Please check the file format.',
+  },
+]
+
+type Row =
+  | { name: string; psbt: () => bitcoin.Psbt; reason: RegExp }
+  | { name: string; psbt: () => bitcoin.Psbt; fee: number; network?: Network }
+
+const ROWS: Row[] = [
+  {
+    name: 'GHSA-4mfv: the real previous transaction with a lower witnessUtxo',
+    psbt: () => spending({ index: 0, witnessUtxo: { script: SCRIPT_OUTPUT, value: BigInt(900_200) }, nonWitnessUtxo: PREV_TX }),
+    reason: /Input 0 witnessUtxo does not match output 0/,
+  },
+  {
+    name: 'a witnessUtxo with the real value and another script',
+    psbt: () => spending({ index: 0, witnessUtxo: { script: Buffer.from(bitcoin.address.toOutputScript(DESTINATION, NET)), value: BigInt(1_000_000) }, nonWitnessUtxo: PREV_TX }),
+    reason: /Input 0 witnessUtxo does not match output 0/,
+  },
+  {
+    name: 'a witnessUtxo copied from another output of the same transaction',
+    psbt: () => spending({ index: 1, witnessUtxo: honest(0), nonWitnessUtxo: PREV_TX }),
+    reason: /Input 0 witnessUtxo does not match output 1/,
+  },
+  {
+    name: 'a nonWitnessUtxo that is not the transaction the input spends',
+    psbt: () => spending({ index: 0, witnessUtxo: honest(0), nonWitnessUtxo: Buffer.from(DECOY.toBuffer()) }),
+    reason: /Input 0 nonWitnessUtxo is not the transaction it spends/,
+  },
+  {
+    name: 'an input carrying only nonWitnessUtxo, next to an honest one',
+    psbt: () => spending({ index: 0, witnessUtxo: honest(0) }, { index: 1, nonWitnessUtxo: PREV_TX }),
+    reason: /Input 1 has no witnessUtxo/,
+  },
+  {
+    name: 'an input carrying neither record',
+    psbt: () => spending({ index: 0, witnessUtxo: honest(0) }, { index: 1 }),
+    reason: /Input 1 has no witnessUtxo/,
+  },
+  {
+    name: 'a matching pair',
+    psbt: () => spending({ index: 0, witnessUtxo: honest(0), nonWitnessUtxo: PREV_TX }),
+    fee: 100_000,
+  },
+  {
+    name: 'a witnessUtxo only input',
+    psbt: () => spending({ index: 1, witnessUtxo: honest(1) }),
+    fee: 50_000,
+  },
+  {
+    name: 'two inputs, one a matching pair and one witnessUtxo only',
+    psbt: () => spending({ index: 0, witnessUtxo: honest(0), nonWitnessUtxo: PREV_TX }, { index: 1, witnessUtxo: honest(1) }),
+    fee: 1_050_000,
+  },
+  {
+    name: 'the file Sparrow wrote (a real matching pair)',
+    psbt: () => bitcoin.Psbt.fromBase64(SPARROW_BINARY_PSBT_BASE64, { network: bitcoin.networks.regtest }),
+    fee: 146,
+    network: 'regtest',
+  },
+]
+
+/** What the inputs really hold, read from the previous transactions, not from witnessUtxo. */
+function realFee(psbt: bitcoin.Psbt): number {
+  const inputs = psbt.txInputs.reduce((sum, { index }, i) => {
+    const prev = psbt.data.inputs[i]!.nonWitnessUtxo
+    return sum + (prev ? bitcoin.Transaction.fromBuffer(prev).outs[index]!.value : FUNDING.outs[index]!.value)
+  }, BigInt(0))
+  return Number(inputs - psbt.txOutputs.reduce((sum, o) => sum + o.value, BigInt(0)))
+}
+
+describe('an imported PSBT must carry the amounts that get signed', () => {
+  for (const { form, decode, refusal } of DECODERS) {
+    describe(form, () => {
+      for (const row of ROWS) {
+        if ('reason' in row) {
+          it(`refuses ${row.name}`, () => {
+            let caught: unknown
+            try {
+              decode(row.psbt(), 'testnet')
+            } catch (err) {
+              caught = err
+            }
+            expect(caught).toBeInstanceOf(RecoveryError)
+            const error = caught as RecoveryError
+            expect(error.code).toBe('PSBT_ERROR')
+            expect(error.userMessage).toBe(refusal)
+            expect(error.detail).toMatch(row.reason)
+          })
+        } else {
+          it(`accepts ${row.name}, showing the real fee`, () => {
+            const psbt = row.psbt()
+            const network = row.network ?? 'testnet'
+            let analysis: ReturnType<typeof analyzePsbt> | undefined
+            expect(() => {
+              analysis = analyzePsbt(decode(psbt, network), network)
+            }).not.toThrow()
+            expect(analysis!.fee).toBe(row.fee)
+            expect(analysis!.fee).toBe(realFee(psbt))
+            expect(analysis!.inputValues).not.toContain(null)
+          })
+        }
+      }
+    })
+  }
+
+  it('the headline row is the advisory shape: unguarded, the screen would show 200 sats', () => {
+    // The premise of the first row, measured. The library parses it, so the
+    // refusal above is the guard's and not the parser's, and the fee the
+    // screen would have shown is 200 sats against a real 100,000.
+    const attack = ROWS[0]!.psbt()
+    const parsed = bitcoin.Psbt.fromBase64(attack.toBase64(), { network: NET })
+    expect(analyzePsbt(parsed, 'testnet').fee).toBe(200)
+    expect(realFee(attack)).toBe(100_000)
   })
 })

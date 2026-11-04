@@ -1875,3 +1875,148 @@ describe('the device name on the hardware step', () => {
     expect(await screen.findByText('Coldcard hardware wallet')).toBeTruthy()
   })
 })
+
+// ---------------------------------------------------------------------------
+// An imported PSBT whose witnessUtxo understates the real previous output
+//
+// GHSA-4mfv-5394-26c7: the PSBT carries the escrow's real funding transaction
+// and a witnessUtxo worth less. The review screen adds up witnessUtxo, so it
+// would show a 200 sat fee for a signature committing to 100,000. The import
+// has to refuse it before anything is shown or signed. The honest PSBT walks
+// the same path to a signature, so a zero below is the refusal's doing.
+// ---------------------------------------------------------------------------
+
+describe('a co-sign PSBT whose amounts are not the ones that would be signed', () => {
+  const PASSWORD = 'correct horse battery staple'
+  const SALT = 'c3d4e5f60718293a4b5c6d7e8f901234'
+  const ACCOUNT_PATH = "m/48'/1'/0'/2'"
+  const SEND = 900_000n
+
+  let json = ''
+  let honestBase64 = ''
+  let attackBase64 = ''
+  let realFee = 0
+  let importedPsbt: bitcoin.Psbt | null = null
+
+  function signatureCount(psbt: bitcoin.Psbt | null): number {
+    if (psbt === null) throw new Error('no PSBT was parsed, so nothing was asserted')
+    return psbt.data.inputs.reduce((total, input) => total + (input.partialSig?.length ?? 0), 0)
+  }
+
+  beforeEach(() => {
+    importedPsbt = null
+    const realFromBase64 = bitcoin.Psbt.fromBase64.bind(bitcoin.Psbt)
+    vi.spyOn(bitcoin.Psbt, 'fromBase64').mockImplementation((base64, opts) => {
+      const parsed = realFromBase64(base64, opts)
+      importedPsbt = parsed
+      return parsed
+    })
+  })
+
+  afterEach(() => vi.restoreAllMocks())
+
+  beforeAll(async () => {
+    const profile = getProfile('pbkdf2-v1')
+    if (!profile) throw new Error('pbkdf2-v1 profile is missing')
+
+    const seed = await deriveSeed(PASSWORD, SALT, profile)
+    const userXprv = deriveXprv(seed, ACCOUNT_PATH, 'testnet')
+    const userXpub = neuterXprv(userXprv, 'testnet')
+    const fingerprint = computeFingerprint(seed, 'testnet')
+
+    json = JSON.stringify({
+      version: 1,
+      network: 'testnet',
+      outputDescriptor:
+        `wsh(sortedmulti(2,[${fingerprint}/48'/1'/0'/2']${userXpub}/0/*,` +
+        `[${fps[0]}/48'/1'/0'/2']${xpubs[0]}/0/*,` +
+        `[${fps[2]}/48'/1'/0'/2']${xpubs[2]}/0/*))`,
+      context: { contractId: 'c', role: 'borrower', threshold: 2, totalKeys: 3 },
+      userKey: {
+        keySource: 'PASSWORD',
+        derivationProfile: 'pbkdf2-v1',
+        salt: SALT,
+        derivationPath: ACCOUNT_PATH,
+        xpub: userXpub,
+        fingerprint,
+      },
+    })
+
+    // The escrow at index 0, and a funding transaction paying it 1,000,000.
+    const userChild = bip32.fromBase58(userXprv, NET).derive(0).derive(0)
+    const coSigners = [master.derive(0), master.derive(2)].map((node) =>
+      Buffer.from(node.derive(0).derive(0).publicKey),
+    )
+    const pubkeys = [Buffer.from(userChild.publicKey), ...coSigners].sort(Buffer.compare)
+    const p2ms = bitcoin.payments.p2ms({ m: 2, pubkeys, network: NET })
+    const p2wsh = bitcoin.payments.p2wsh({ redeem: p2ms, network: NET })
+
+    const funding = new bitcoin.Transaction()
+    funding.version = 2
+    funding.addInput(Buffer.alloc(32, 9), 0)
+    funding.addOutput(p2wsh.output!, 1_000_000n)
+    realFee = Number(funding.outs[0]!.value - SEND)
+
+    function psbtWithWitnessValue(value: bigint): string {
+      const psbt = new bitcoin.Psbt({ network: NET })
+      psbt.addInput({
+        hash: funding.getHash(),
+        index: 0,
+        witnessUtxo: { script: p2wsh.output!, value },
+        nonWitnessUtxo: funding.toBuffer(),
+        witnessScript: p2ms.output!,
+        bip32Derivation: [
+          {
+            masterFingerprint: Buffer.from(fingerprint, 'hex'),
+            pubkey: Buffer.from(userChild.publicKey),
+            path: `${ACCOUNT_PATH}/0/0`,
+          },
+        ],
+      })
+      psbt.addOutput({ address: p2wsh.address!, value: SEND })
+      return psbt.toBase64()
+    }
+
+    honestBase64 = psbtWithWitnessValue(1_000_000n)
+    attackBase64 = psbtWithWitnessValue(900_200n)
+  }, 30_000)
+
+  /** Password, then the walk to the import step, then the paste. */
+  async function importPasted(base64: string) {
+    loadFile(json)
+    confirmInfo()
+    fireEvent.change(screen.getByPlaceholderText(/Enter your escrow password/i), {
+      target: { value: PASSWORD },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Recover Key/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Continue$/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Sign Existing PSBT/i }))
+    fireEvent.change(screen.getByPlaceholderText(/cHNidP8BAH/), { target: { value: base64 } })
+    fireEvent.click(screen.getByRole('button', { name: /Import from Paste/i }))
+  }
+
+  it('shows the honest PSBT with its real fee, and signs it', async () => {
+    await importPasted(honestBase64)
+
+    expect(await screen.findByText('Review Imported PSBT')).toBeTruthy()
+    expect(realFee).toBe(100_000)
+    expect(screen.getByText(`${realFee.toLocaleString('en-US')} sats`)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Add Your Signature/i }))
+    expect(signatureCount(importedPsbt)).toBe(1)
+  })
+
+  it('refuses the understated one at import: nothing shown, nothing signed', async () => {
+    await importPasted(attackBase64)
+
+    expect(await screen.findByText('Invalid PSBT data. Please check the input.')).toBeTruthy()
+    // It was parsed, so the refusal is the guard's and not the parser's.
+    expect(importedPsbt).not.toBeNull()
+    expect(screen.getByText('Import PSBT')).toBeTruthy()
+    expect(screen.queryByText('Review Imported PSBT')).toBeNull()
+    expect(screen.queryByText(/Network Fee/i)).toBeNull()
+    expect(screen.queryByText('200 sats')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Add Your Signature/i })).toBeNull()
+    expect(signatureCount(importedPsbt)).toBe(0)
+  })
+})
